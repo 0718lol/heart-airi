@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>心蕊 AIRI 二开版</title>
+    <link rel="stylesheet" href="/styles.css?v=20260813-airi-logical-size" />
+  </head>
+  <body>
+    <section class="welcome-gate" id="welcomeGate" aria-labelledby="welcomeTitle">
+      <div class="welcome-card">
+        <p class="label">心灵花房</p>
+        <h1 id="welcomeTitle">你好，我是心蕊</h1>
+        <p>这里是一个给成年人使用的情绪支持空间。你不用把话说得很完整，我们可以先从一个小动作开始。</p>
+        <form id="profileForm">
+          <label for="profileName">怎么称呼你？</label>
+          <input id="profileName" name="name" maxlength="24" autocomplete="nickname" placeholder="输入一个昵称" required />
+          <button type="submit">开始陪伴</button>
+        </form>
+        <small>心蕊不是医生，不能替代心理咨询、精神科治疗或紧急救援。第一版资料只保存在这台设备上。</small>
+      </div>
+    </section>
+
+    <div class="modal-backdrop" id="modalBackdrop" hidden></div>
+    <section class="memory-dialog panel" id="memoryDialog" hidden aria-labelledby="memoryTitle">
+      <div class="dialog-head">
+        <div><p class="label">只属于你的心蕊</p><h2 id="memoryTitle">心蕊记住了什么</h2></div>
+        <button class="icon-button" id="closeMemory" type="button" aria-label="关闭记忆">×</button>
+      </div>
+      <p class="dialog-copy">只有你主动保存的内容会出现在这里。敏感内容默认不会保存。</p>
+      <form class="memory-form" id="memoryForm">
+        <input id="memoryInput" maxlength="120" placeholder="例如：散步和听轻音乐能让我平静一点" />
+        <button type="submit">记住这件事</button>
+      </form>
+      <div class="memory-list" id="memoryList"></div>
+      <button class="text-button danger-button" id="clearProfile" type="button">清除这个昵称的全部记录</button>
+    </section>
+
+    <section class="safety-dialog panel" id="safetyDialog" hidden aria-labelledby="safetyTitle">
+      <div class="dialog-head">
+        <div><p class="label">安全陪伴</p><h2 id="safetyTitle">先把今天的你放到安全的地方</h2></div>
+        <button class="icon-button" id="closeSafety" type="button" aria-label="关闭安全计划">×</button>
+      </div>
+      <p class="dialog-copy">如果你现在有立即伤害自己或他人的危险，请马上联系身边的人，去明亮且有人在的地方，并拨打 120 或 110，或前往附近医院急诊。</p>
+      <div class="safety-steps" id="safetySteps">
+        <label><input type="checkbox" data-safety-step="离开危险物品或地点，去有人在的地方" /> 我已经离开危险物品或地点</label>
+        <label><input type="checkbox" data-safety-step="联系一个可信任的人，不独处" /> 我已经联系了一个可信任的人</label>
+        <label><input type="checkbox" data-safety-step="喝水、坐下、慢慢呼气六秒" /> 我正在做一个让身体稳定下来的动作</label>
+      </div>
+      <div class="safety-contact">
+        <label for="safetyContact">我可以联系谁？</label>
+        <input id="safetyContact" maxlength="60" placeholder="姓名或称呼，不必填写完整联系方式" />
+      </div>
+      <div class="safety-actions">
+        <button type="button" id="copyHelpMessage">复制求助消息</button>
+        <button type="button" id="saveSafetyPlan">保存安全计划</button>
+      </div>
+      <p class="saved-note" id="safetySaved" role="status"></p>
+    </section>
+
+    <div class="floating-pet" id="floatingPet" aria-label="可拖动的心蕊宠物" role="button" tabindex="0">
+      <div class="pet-handle">拖动心蕊</div>
+      <div class="mascot" id="spirit" data-state="idle" aria-hidden="true">
+        <canvas class="live2d-stage" id="live2dStage"></canvas>
+        <img class="airi-avatar" src="/airi-yellow-standee.png" alt="" />
+        <div class="airi-expression">
+          <span class="airi-lid left"></span>
+          <span class="airi-lid right"></span>
+          <span class="airi-smile"></span>
+        </div>
+      </div>
+    </div>
+
+    <main class="app-layout">
+      <aside class="work-rail" aria-label="心蕊工作栏">
+        <div class="rail-bg" aria-hidden="true">
+          <span class="cloud cloud-a"></span>
+          <span class="cloud cloud-b"></span>
+          <span class="spark spark-a"></span>
+          <span class="spark spark-b"></span>
+        </div>
+
+        <div class="rail-brand">
+          <p>心灵花房</p>
+          <h1>心蕊</h1>
+        </div>
+
+        <div class="rail-section">
+          <p class="label">陪伴状态</p>
+          <div class="rail-status">
+            <strong id="runtimeStatus">已准备好</strong>
+            <span id="safetyStatus">等你开口</span>
+          </div>
+        </div>
+
+        <div class="rail-section">
+          <p class="label">心情天气</p>
+          <div class="segmented compact" id="moods">
+            <button class="active" type="button" data-mood="sunny">晴</button>
+            <button type="button" data-mood="cloudy">阴</button>
+            <button type="button" data-mood="rainy">雨</button>
+            <button type="button" data-mood="storm">暴风</button>
+          </div>
+        </div>
+
+        <div class="rail-section tools-section">
+          <div class="rail-section-head">
+            <p class="label">工作工具</p>
+            <button type="button" id="runTool">运行</button>
+          </div>
+          <div class="selected-tool" id="selectedTool">先接住 · 情绪承接</div>
+          <div class="tool-list" id="toolGrid">
+            <button class="active" type="button" data-tool="hold"><strong>先接住</strong><span>情绪承接</span></button>
+            <button type="button" data-tool="untangle"><strong>拆心结</strong><span>认知梳理</span></button>
+            <button type="button" data-tool="play"><strong>变轻点</strong><span>减压游戏</span></button>
+            <button type="button" data-tool="breathe"><strong>呼吸灯</strong><span>身体安定</span></button>
+            <button type="button" data-tool="sleep"><strong>睡前卸载</strong><span>收工仪式</span></button>
+            <button type="button" data-tool="letter"><strong>写给自己</strong><span>自我同情</span></button>
+            <button type="button" data-tool="boundary"><strong>关系边界</strong><span>表达练习</span></button>
+            <button type="button" data-tool="tiny"><strong>行动小步</strong><span>行为激活</span></button>
+            <button type="button" data-tool="support"><strong>求助计划</strong><span>真人支持</span></button>
+          </div>
+        </div>
+      </aside>
+
+      <section class="main-workspace" aria-label="心蕊主工作区">
+        <header class="workspace-head">
+          <div>
+            <p class="label">今日整理</p>
+            <h2><span id="greetingName">你好</span>，今天想先照顾哪里？</h2>
+          </div>
+          <div class="workspace-actions">
+            <button class="quiet-button" id="quietMode" type="button">安静模式</button>
+            <button class="quiet-button" id="openSafety" type="button">安全计划</button>
+            <button class="quiet-button" id="openMemory" type="button">我的记忆</button>
+          </div>
+        </header>
+
+        <section class="quick-start panel" aria-labelledby="quickStartTitle">
+          <div class="quick-copy">
+            <p class="label">现在不需要想太多</p>
+            <h2 id="quickStartTitle">你现在最需要什么？</h2>
+            <p>选一个最接近的，心蕊只带你走下一小步。</p>
+          </div>
+          <div class="quick-actions" id="quickActions">
+            <button type="button" data-flow="steady"><span class="quick-icon">○</span><strong>我只是有点难受</strong><small>先缓一缓</small></button>
+            <button type="button" data-flow="untangle"><span class="quick-icon">↝</span><strong>脑子停不下来</strong><small>把内耗拆开</small></button>
+            <button type="button" data-flow="pressure"><span class="quick-icon">↓</span><strong>压力太大了</strong><small>找一个可控小步</small></button>
+            <button type="button" data-flow="support"><span class="quick-icon">♡</span><strong>我不知道怎么求助</strong><small>写一条能发出去的消息</small></button>
+          </div>
+          <div class="focus-flow" id="focusFlow" hidden></div>
+        </section>
+
+        <div class="main-grid">
+          <section class="dialogue panel">
+            <div class="sample-conversation" id="sampleConversation" aria-label="工具对话示例"></div>
+            <div class="messages" id="messages"></div>
+            <form class="composer" id="composer">
+              <textarea id="input" rows="2" placeholder="说一句最卡住你的话，我会陪你慢慢整理..."></textarea>
+              <button type="submit">生成</button>
+            </form>
+          </section>
+
+          <div class="side-stack">
+            <aside class="knot-panel panel">
+              <p class="label">心结花盘</p>
+              <h2 id="knotTitle">等待一句心里话</h2>
+              <p id="knotSummary">你说出口以后，这里会长出今天的线索。</p>
+              <div class="cube" id="cube"></div>
+              <div class="fields">
+                <div><span>感受</span><strong id="feeling">等待中</strong></div>
+                <div><span>需要</span><strong id="need">被理解</strong></div>
+                <div><span>小步</span><strong id="tinyStep">说出来</strong></div>
+              </div>
+            </aside>
+
+            <section class="mini-games panel" aria-label="小游戏">
+              <div class="mini-games-head">
+                <p class="label">小游戏</p>
+                <strong id="gameStatus">点一点，让心轻一点</strong>
+              </div>
+              <div class="bubble-game" id="bubbleGame" aria-label="泡泡释放">
+                <button type="button" class="bubble bubble-one"></button>
+                <button type="button" class="bubble bubble-two"></button>
+                <button type="button" class="bubble bubble-three"></button>
+              </div>
+              <button class="breath-game" id="breathGame" type="button">
+                <span></span>
+                跟心蕊呼吸
+              </button>
+              <div class="garden-game" id="gardenGame">
+                <button type="button">浇水</button>
+                <div class="garden-bed">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="/vendor/live2dcubismcore.min.js"></script>
+    <script src="/vendor/pixi.min.js"></script>
+    <script src="/vendor/pixi-live2d-cubism4.min.js"></script>
+    <script src="/app.js?v=20260813-airi-logical-size"></script>
+  </body>
+</html>
