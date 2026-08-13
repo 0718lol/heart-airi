@@ -46,7 +46,7 @@ try {
   if (!html.includes("app-layout")) throw new Error("missing sidebar app layout");
   if (!html.includes("floatingPet")) throw new Error("missing draggable pet");
   if (!html.includes("welcomeGate") || !html.includes("profileForm")) throw new Error("missing local profile gate");
-  if (!html.includes("quickActions") || !html.includes("我只是有点难受")) throw new Error("missing quick support flows");
+  if (!html.includes("checkinPanel") || !html.includes("checkinForm")) throw new Error("missing check-in flow");
   if (!html.includes("memoryDialog") || !html.includes("safetyDialog")) throw new Error("missing memory and safety dialogs");
   if (!html.includes("工作工具")) throw new Error("missing tool rail");
   if (!html.includes("sampleConversation")) throw new Error("missing inline sample conversation");
@@ -57,7 +57,7 @@ try {
   if (!html.includes("/vendor/live2dcubismcore.min.js")) throw new Error("missing Cubism runtime script");
   if (!html.includes("/vendor/pixi.min.js")) throw new Error("missing Pixi script");
   if (!html.includes("/vendor/pixi-live2d-cubism4.min.js")) throw new Error("missing Pixi Live2D script");
-  if (!html.includes("app.js?v=20260813-airi-logical-size")) throw new Error("missing cache-busted script");
+  if (!html.includes("app.js?v=20260813-airi-checkin-chat")) throw new Error("missing cache-busted script");
   if (typeof runtime.llm !== "boolean") throw new Error("bad llm status");
   if (!runtime.model) throw new Error("missing model name");
   if (!Array.isArray(endpoints.endpoints) || endpoints.endpoints.length < 5) throw new Error("missing endpoints list");

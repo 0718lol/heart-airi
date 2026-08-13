@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>心蕊 AIRI 二开版</title>
-    <link rel="stylesheet" href="/styles.css?v=20260813-airi-logical-size" />
+    <link rel="stylesheet" href="/styles.css?v=20260813-airi-checkin-chat" />
   </head>
   <body>
     <section class="welcome-gate" id="welcomeGate" aria-labelledby="welcomeTitle">
@@ -126,8 +126,8 @@
       <section class="main-workspace" aria-label="心蕊主工作区">
         <header class="workspace-head">
           <div>
-            <p class="label">今日整理</p>
-            <h2><span id="greetingName">你好</span>，今天想先照顾哪里？</h2>
+            <p class="label">心蕊陪伴</p>
+            <span class="conversation-state">现在先听你说</span>
           </div>
           <div class="workspace-actions">
             <button class="quiet-button" id="quietMode" type="button">安静模式</button>
@@ -136,19 +136,20 @@
           </div>
         </header>
 
-        <section class="quick-start panel" aria-labelledby="quickStartTitle">
-          <div class="quick-copy">
-            <p class="label">现在不需要想太多</p>
-            <h2 id="quickStartTitle">你现在最需要什么？</h2>
-            <p>选一个最接近的，心蕊只带你走下一小步。</p>
+        <section class="checkin-panel panel" id="checkinPanel" hidden aria-labelledby="checkinTitle">
+          <div class="checkin-topline">
+            <div>
+              <p class="label">第一次见面，先认识一下</p>
+              <h2 id="checkinTitle">我想先听懂你今天的心情</h2>
+            </div>
+            <span class="checkin-count" id="checkinCount">1 / 4</span>
           </div>
-          <div class="quick-actions" id="quickActions">
-            <button type="button" data-flow="steady"><span class="quick-icon">○</span><strong>我只是有点难受</strong><small>先缓一缓</small></button>
-            <button type="button" data-flow="untangle"><span class="quick-icon">↝</span><strong>脑子停不下来</strong><small>把内耗拆开</small></button>
-            <button type="button" data-flow="pressure"><span class="quick-icon">↓</span><strong>压力太大了</strong><small>找一个可控小步</small></button>
-            <button type="button" data-flow="support"><span class="quick-icon">♡</span><strong>我不知道怎么求助</strong><small>写一条能发出去的消息</small></button>
-          </div>
-          <div class="focus-flow" id="focusFlow" hidden></div>
+          <div class="checkin-progress" aria-hidden="true"><span id="checkinProgress"></span></div>
+          <div class="checkin-thread" id="checkinThread"></div>
+          <form class="checkin-form" id="checkinForm">
+            <textarea id="checkinAnswer" rows="2" maxlength="500" placeholder="不用组织得很完整，想到什么就说什么"></textarea>
+            <button type="submit">回答</button>
+          </form>
         </section>
 
         <div class="main-grid">
@@ -202,6 +203,6 @@
     <script src="/vendor/live2dcubismcore.min.js"></script>
     <script src="/vendor/pixi.min.js"></script>
     <script src="/vendor/pixi-live2d-cubism4.min.js"></script>
-    <script src="/app.js?v=20260813-airi-logical-size"></script>
+    <script src="/app.js?v=20260813-airi-checkin-chat"></script>
   </body>
 </html>

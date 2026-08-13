@@ -23,9 +23,12 @@ const gardenGame = document.querySelector("#gardenGame");
 const welcomeGate = document.querySelector("#welcomeGate");
 const profileForm = document.querySelector("#profileForm");
 const profileName = document.querySelector("#profileName");
-const greetingName = document.querySelector("#greetingName");
-const quickActions = document.querySelector("#quickActions");
-const focusFlow = document.querySelector("#focusFlow");
+const checkinPanel = document.querySelector("#checkinPanel");
+const checkinCount = document.querySelector("#checkinCount");
+const checkinProgress = document.querySelector("#checkinProgress");
+const checkinThread = document.querySelector("#checkinThread");
+const checkinForm = document.querySelector("#checkinForm");
+const checkinAnswer = document.querySelector("#checkinAnswer");
 const quietMode = document.querySelector("#quietMode");
 const modalBackdrop = document.querySelector("#modalBackdrop");
 const memoryDialog = document.querySelector("#memoryDialog");
@@ -37,6 +40,14 @@ const safetyContact = document.querySelector("#safetyContact");
 const safetySaved = document.querySelector("#safetySaved");
 
 let activeProfile = null;
+let checkinStep = 0;
+
+const checkinQuestions = [
+  "是什么让你今天来到这里？",
+  "此刻最明显的感觉是什么？可以只说一个词。",
+  "这份难受最近影响你最多的是哪里？",
+  "你希望心蕊现在怎么陪你？"
+];
 
 let mood = "sunny";
 let mode = "hold";
@@ -383,7 +394,6 @@ function saveProfile() {
 
 function showProfile(profile) {
   activeProfile = profile;
-  greetingName.textContent = profile.name;
   profileName.value = profile.name;
   welcomeGate.hidden = true;
   renderMemoryList();
@@ -393,6 +403,36 @@ function showProfile(profile) {
       input.checked = profile.safetyPlan.steps?.includes(input.dataset.safetyStep) || false;
     });
   }
+}
+
+function renderCheckinQuestion() {
+  const question = checkinQuestions[checkinStep];
+  checkinCount.textContent = `${checkinStep + 1} / ${checkinQuestions.length}`;
+  checkinProgress.style.width = `${(checkinStep / checkinQuestions.length) * 100}%`;
+  const prompt = document.createElement("article");
+  prompt.className = "checkin-bubble bot";
+  prompt.textContent = question;
+  checkinThread.appendChild(prompt);
+  checkinThread.scrollTop = checkinThread.scrollHeight;
+  checkinAnswer.focus();
+}
+
+function startCheckin() {
+  checkinStep = 0;
+  checkinThread.innerHTML = "";
+  checkinPanel.hidden = false;
+  renderCheckinQuestion();
+}
+
+function finishCheckin() {
+  checkinProgress.style.width = "100%";
+  checkinPanel.classList.add("checkin-complete");
+  window.setTimeout(() => {
+    checkinPanel.hidden = true;
+    checkinPanel.classList.remove("checkin-complete");
+    sampleConversation.hidden = true;
+  }, 500);
+  addMessage("谢谢你告诉我这些。接下来我们就按你的节奏聊，不需要再回答固定问题了。", "bot");
 }
 
 function renderMemoryList() {
@@ -431,42 +471,17 @@ async function copyText(text) {
 
 function renderFocusFlow(flowName) {
   const flow = focusFlows[flowName];
-  if (!flow) return;
-  const initial = flowName === "support"
-    ? "我现在状态不太好，不需要你解决问题，可以陪我十分钟吗？如果你方便，能不能给我回个消息或陪我去一个有人在的地方？"
-    : "";
-  focusFlow.hidden = false;
-  focusFlow.dataset.flow = flowName;
-  focusFlow.dataset.step = "0";
-  focusFlow.innerHTML = `
-    <div class="focus-flow-head"><h3>${escapeHtml(flow.title)}</h3><button class="text-button" type="button" data-flow-close>收起</button></div>
-    <p>${escapeHtml(flow.intro)}</p>
-    <div class="flow-progress"><span></span></div>
-    <div class="flow-step"><strong></strong><button type="button" data-flow-next>完成这一步</button></div>
-    ${flowName === "support" ? `<div class="support-message"><textarea id="supportMessage" rows="3">${escapeHtml(initial)}</textarea><button type="button" data-copy-support>复制消息</button></div>` : ""}
-  `;
-  updateFocusStep();
-  focusFlow.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  spirit.dataset.state = flowName === "steady" ? "relieved" : flowName === "support" ? "soft" : "thinking";
-}
-
-function updateFocusStep() {
-  const flowName = focusFlow.dataset.flow;
-  const stepIndex = Number(focusFlow.dataset.step || 0);
-  const flow = focusFlows[flowName];
-  if (!flow) return;
-  const step = focusFlow.querySelector(".flow-step strong");
-  const progress = focusFlow.querySelector(".flow-progress span");
-  const next = focusFlow.querySelector("[data-flow-next]");
-  step.textContent = `${stepIndex + 1}. ${flow.steps[stepIndex]}`;
-  progress.style.width = `${((stepIndex + 1) / flow.steps.length) * 100}%`;
-  next.textContent = stepIndex === flow.steps.length - 1 ? "完成陪伴" : "完成这一步";
+  if (flow) addMessage(flow.intro, "bot");
+  if (flowName === "support") openDialog(safetyDialog);
 }
 
 function initProfileAndMvp() {
   const lastName = localStorage.getItem("heartAiriLastProfile");
   const existing = lastName ? loadProfile(lastName) : null;
-  if (existing) showProfile(existing);
+  if (existing) {
+    showProfile(existing);
+    if (!(existing.checkin || []).length) startCheckin();
+  }
 
   profileForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -477,36 +492,28 @@ function initProfileAndMvp() {
     localStorage.setItem("heartAiriLastProfile", name);
     saveProfile();
     showProfile(activeProfile);
-    addMessage(`你好，${name}。今天不用表现得很好，我们先从一个小地方开始。`, "bot");
+    startCheckin();
   });
 
-  quickActions.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-flow]");
-    if (!button) return;
-    renderFocusFlow(button.dataset.flow);
-  });
-
-  focusFlow.addEventListener("click", async (event) => {
-    if (event.target.closest("[data-flow-close]")) {
-      focusFlow.hidden = true;
+  checkinForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const answer = checkinAnswer.value.trim();
+    if (!answer) return;
+    const reply = document.createElement("article");
+    reply.className = "checkin-bubble user";
+    reply.textContent = answer;
+    checkinThread.appendChild(reply);
+    if (activeProfile) {
+      activeProfile.checkin = [...(activeProfile.checkin || []), { question: checkinQuestions[checkinStep], answer, createdAt: Date.now() }].slice(-4);
+      saveProfile();
+    }
+    checkinAnswer.value = "";
+    checkinStep += 1;
+    if (checkinStep >= checkinQuestions.length) {
+      finishCheckin();
       return;
     }
-    if (event.target.closest("[data-flow-next]")) {
-      const flow = focusFlows[focusFlow.dataset.flow];
-      const nextStep = Number(focusFlow.dataset.step || 0) + 1;
-      if (nextStep >= flow.steps.length) {
-        addMessage("你已经完成了一个小小的照顾动作。现在不用急着继续，给自己一点缓冲。", "bot");
-        focusFlow.hidden = true;
-        spirit.dataset.state = "relieved";
-      } else {
-        focusFlow.dataset.step = String(nextStep);
-        updateFocusStep();
-      }
-    }
-    if (event.target.closest("[data-copy-support]")) {
-      const copied = await copyText(document.querySelector("#supportMessage").value);
-      event.target.textContent = copied ? "已复制，可以发给对方了" : "复制失败，请手动复制";
-    }
+    renderCheckinQuestion();
   });
 
   quietMode.addEventListener("click", () => {
