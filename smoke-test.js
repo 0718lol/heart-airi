@@ -121,12 +121,13 @@ async function testLocalMode() {
   const child = await startApp(port);
   try {
     const html = await fetch(appUrl(port)).then((response) => response.text());
-    const appScript = await fetch(appUrl(port, "/app.js?v=20260817-guided-tools")).then((response) => response.text());
-    const appStyles = await fetch(appUrl(port, "/styles.css?v=20260817-guided-tools")).then((response) => response.text());
+    const appScript = await fetch(appUrl(port, "/app.js?v=20260817-care-loop")).then((response) => response.text());
+    const appStyles = await fetch(appUrl(port, "/styles.css?v=20260817-care-loop")).then((response) => response.text());
     const runtime = await fetch(appUrl(port, "/api/runtime")).then((response) => response.json());
     const endpoints = await fetch(appUrl(port, "/api/endpoints")).then((response) => response.json());
     const knot = await postJson(port, "/api/knot/extract", { text: "我最近很焦虑，感觉没人懂我", mood: "rainy", mode: "untangle" }).then((response) => response.json());
     const tool = await postJson(port, "/api/toolkit/run", { text: "我今晚睡不着", mood: "rainy", tool: "sleep" }).then((response) => response.json());
+    const solveTool = await postJson(port, "/api/toolkit/run", { text: "我不知道怎么和同事沟通", mood: "cloudy", tool: "solve" }).then((response) => response.json());
     const safety = await postJson(port, "/api/safety/check", { text: "我现在不安全，不想一个人待着" }).then((response) => response.json());
     const chat = await postJson(port, "/api/chat", {
       text: "我还是很焦虑",
@@ -155,18 +156,23 @@ async function testLocalMode() {
     if (!html.includes("welcomeGate") || !html.includes("profileForm")) throw new Error("missing local profile gate");
     if (!html.includes("checkinPanel") || !html.includes("checkinForm")) throw new Error("missing check-in flow");
     if (!html.includes("memoryDialog") || !html.includes("clearConversation") || !html.includes("safetyDialog") || !html.includes("logoutProfile")) throw new Error("missing local data controls");
-    if (!html.includes("工作工具") || !html.includes("sampleConversation")) throw new Error("missing support tools");
+    if (!html.includes("dailyMood") || !html.includes("dailyPreference") || !html.includes("followupPanel")) throw new Error("missing daily state or follow-up flow");
+    if (!html.includes("methodList") || !html.includes("data-memory-tab=\"methods\"") || !html.includes("safetyWarnings")) throw new Error("missing memory categories or expanded safety plan");
+    if (!html.includes("现在适合") || !html.includes("contextTool") || !html.includes("sampleConversation")) throw new Error("missing contextual support tools");
     if (!html.includes("小游戏") || !html.includes("bubbleGame") || !html.includes("breathGame") || !html.includes("gardenGame")) throw new Error("missing mini games");
     if (!html.includes("live2dStage")) throw new Error("missing Live2D canvas");
     if (!html.includes("/vendor/live2dcubismcore.min.js") || !html.includes("/vendor/pixi.min.js") || !html.includes("/vendor/pixi-live2d-cubism4.min.js")) throw new Error("missing Live2D scripts");
-    if (!html.includes("app.js?v=20260817-guided-tools")) throw new Error("missing cache-busted script");
+    if (!html.includes("app.js?v=20260817-care-loop")) throw new Error("missing cache-busted script");
     if (!appScript.includes('fetch("/api/chat"') || !appScript.includes('accept: "text/event-stream"') || !appScript.includes("saveConversationTurn") || !appScript.includes("returnToProfileGate")) throw new Error("frontend chat integration is missing");
     if (!appScript.includes("activeToolFlow") || !appScript.includes("pressure-classifier") || !appScript.includes("buildSupportDraft")) throw new Error("guided tool flows are missing");
+    if (!appScript.includes("completeSolve") || !appScript.includes("saveAction") || !appScript.includes("saveMethod") || !appScript.includes("recommendTool")) throw new Error("care loop features are missing");
+    if (!appStyles.includes(".memory-tabs") || !appStyles.includes(".followup-panel") || !appStyles.includes(".context-tool")) throw new Error("care loop styles are missing");
     if (!appStyles.includes("body.quiet-mode .floating-pet") || appStyles.includes("body.quiet-mode .floating-pet,\nbody.quiet-mode .side-stack")) throw new Error("quiet mode companion is not visible");
     if (runtime.llm || runtime.provider !== "openai-compatible" || runtime.streaming !== true) throw new Error("bad local runtime status");
     if (!Array.isArray(endpoints.endpoints) || endpoints.endpoints.length < 5) throw new Error("missing endpoints list");
     if (!Array.isArray(knot.knot.tiles) || knot.knot.tiles.length !== 9 || knot.source !== "local") throw new Error("bad local knot");
     if (tool.result.title !== "睡前卸载") throw new Error("bad toolkit result");
+    if (solveTool.result.title !== "一起想办法" || solveTool.result.steps.length !== 4) throw new Error("bad problem-solving toolkit result");
     if (!safety.needsHumanSupport || safety.crisis) throw new Error("support risk was not classified");
     if (chat.source !== "local" || chat.sessionId !== "local-session" || !chat.reply) throw new Error("bad local chat fallback");
     if (!streamEvents.some((item) => item.event === "context") || !streamEvents.some((item) => item.event === "delta") || !streamEvents.some((item) => item.event === "result")) throw new Error("bad local chat stream");
@@ -197,7 +203,9 @@ async function testProviderMode() {
         { role: "user", content: "我明天要考试" },
         { role: "assistant", content: "考试让你有些紧张。" }
       ],
-      memories: ["散步能让我平静"]
+      memories: ["散步能让我平静"],
+      dailyState: { mood: 2, energy: 1, stress: 3, causes: ["学业"], note: "最近睡得少" },
+      preference: "listen"
     }).then((response) => response.json());
     const modelRequest = mock.requests.at(-1);
     const modelMessages = JSON.stringify(modelRequest.body.messages);
@@ -217,6 +225,7 @@ async function testProviderMode() {
     if (!runtime.llm || runtime.model !== "test-model") throw new Error("provider runtime is not enabled");
     if (chat.source !== "openai-compatible" || !chat.reply.includes("考试")) throw new Error("provider chat was not used");
     if (!modelMessages.includes("我明天要考试") || !modelMessages.includes("散步能让我平静") || !modelMessages.includes("小雨")) throw new Error("multi-turn context or memory was omitted");
+    if (!modelMessages.includes("最近睡得少") || !modelMessages.includes("先倾听")) throw new Error("daily state or support preference was omitted");
     if (modelRequest.authorization !== "Bearer test-key") throw new Error("provider authorization is missing");
     if (knot.source !== "openai-compatible" || knot.knot.title !== "模型整理的心结" || knot.knot.tiles.length !== 9) throw new Error("provider knot extraction failed");
     if (!streamEvents.some((item) => item.event === "delta" && item.data.delta.includes("考试"))) throw new Error("provider stream delta is missing");

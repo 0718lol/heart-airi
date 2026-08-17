@@ -4,10 +4,21 @@ import { localKnot, mergeModelKnot } from "./knot.js";
 import { crisisKnot, safetyCheck } from "./safety.js";
 
 const allowedMoods = new Set(["sunny", "cloudy", "rainy", "storm"]);
-const allowedModes = new Set(["hold", "untangle", "play", "breathe", "sleep", "letter", "boundary", "tiny", "support"]);
+const allowedModes = new Set(["hold", "untangle", "play", "solve", "breathe", "sleep", "letter", "boundary", "tiny", "support"]);
 
 function clean(value, maxLength) {
   return String(value || "").replace(/\0/g, "").trim().slice(0, maxLength);
+}
+
+function normalizeDailyState(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    mood: Number.isInteger(value.mood) ? Math.min(5, Math.max(1, value.mood)) : undefined,
+    energy: Number.isInteger(value.energy) ? Math.min(3, Math.max(1, value.energy)) : undefined,
+    stress: Number.isInteger(value.stress) ? Math.min(3, Math.max(1, value.stress)) : undefined,
+    causes: Array.isArray(value.causes) ? value.causes.map((item) => clean(item, 16)).filter(Boolean).slice(0, 7) : [],
+    note: clean(value.note, 300) || undefined
+  };
 }
 
 function parseJsonObject(value) {
@@ -39,7 +50,9 @@ export function normalizeChatInput(body = {}) {
     sessionId: clean(body.sessionId, 80) || randomUUID(),
     history: body.history,
     memories: body.memories,
-    nickname: clean(body.nickname, 24)
+    nickname: clean(body.nickname, 24),
+    dailyState: normalizeDailyState(body.dailyState),
+    preference: ["listen", "solve", "calm"].includes(body.preference) ? body.preference : ""
   };
 }
 

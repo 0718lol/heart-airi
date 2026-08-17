@@ -25,11 +25,16 @@ const welcomeGate = document.querySelector("#welcomeGate");
 const profileForm = document.querySelector("#profileForm");
 const profileName = document.querySelector("#profileName");
 const checkinPanel = document.querySelector("#checkinPanel");
-const checkinCount = document.querySelector("#checkinCount");
-const checkinProgress = document.querySelector("#checkinProgress");
-const checkinThread = document.querySelector("#checkinThread");
 const checkinForm = document.querySelector("#checkinForm");
-const checkinAnswer = document.querySelector("#checkinAnswer");
+const checkinTitle = document.querySelector("#checkinTitle");
+const dailyMood = document.querySelector("#dailyMood");
+const dailyEnergy = document.querySelector("#dailyEnergy");
+const dailyStress = document.querySelector("#dailyStress");
+const dailyCauses = document.querySelector("#dailyCauses");
+const dailyPreference = document.querySelector("#dailyPreference");
+const dailyNote = document.querySelector("#dailyNote");
+const followupPanel = document.querySelector("#followupPanel");
+const followupAction = document.querySelector("#followupAction");
 const quietMode = document.querySelector("#quietMode");
 const logoutProfile = document.querySelector("#logoutProfile");
 const modalBackdrop = document.querySelector("#modalBackdrop");
@@ -37,23 +42,33 @@ const memoryDialog = document.querySelector("#memoryDialog");
 const memoryForm = document.querySelector("#memoryForm");
 const memoryInput = document.querySelector("#memoryInput");
 const memoryList = document.querySelector("#memoryList");
+const memoryTabs = document.querySelector("#memoryTabs");
+const methodForm = document.querySelector("#methodForm");
+const methodInput = document.querySelector("#methodInput");
+const methodCategory = document.querySelector("#methodCategory");
+const methodList = document.querySelector("#methodList");
+const actionList = document.querySelector("#actionList");
 const safetyDialog = document.querySelector("#safetyDialog");
 const safetyContact = document.querySelector("#safetyContact");
+const safetyWarnings = document.querySelector("#safetyWarnings");
+const safetyCalming = document.querySelector("#safetyCalming");
+const safetyPlace = document.querySelector("#safetyPlace");
+const safetyProfessional = document.querySelector("#safetyProfessional");
 const safetySaved = document.querySelector("#safetySaved");
+const contextTool = document.querySelector("#contextTool");
+const contextToolTitle = document.querySelector("#contextToolTitle");
+const contextToolReason = document.querySelector("#contextToolReason");
+const allToolsToggle = document.querySelector("#allToolsToggle");
+const conversationState = document.querySelector(".conversation-state");
 
 let activeProfile = null;
-let checkinStep = 0;
 let conversationHistory = [];
 let sessionId = createSessionId();
 let chatPending = false;
 let activeToolFlow = null;
-
-const checkinQuestions = [
-  "是什么让你今天来到这里？",
-  "此刻最明显的感觉是什么？可以只说一个词。",
-  "这份难受最近影响你最多的是哪里？",
-  "你希望心蕊现在怎么陪你？"
-];
+let dailyDraft = { mood: null, energy: null, stress: null, causes: [], preference: null };
+let pendingFollowupId = null;
+const pageOpenedAt = Date.now();
 
 let mood = "sunny";
 let mode = "hold";
@@ -70,6 +85,7 @@ const toolLabels = {
   hold: "先接住 · 情绪承接",
   untangle: "拆心结 · 认知梳理",
   play: "变轻点 · 压力拆解",
+  solve: "一起想办法 · 现实问题",
   breathe: "呼吸灯 · 身体安定",
   sleep: "睡前卸载 · 收工仪式",
   letter: "写给自己 · 自我同情",
@@ -119,6 +135,20 @@ const toolMocks = {
       ["bot", "给它起个外号，比如“乱飞的纸团”。然后找房间里一个绿色的东西，看它 10 秒。"],
       ["user", "我看到桌上的绿色杯子。"],
       ["bot", "很好。你已经从脑内风暴回到现实物体了。下一步只做一个轻动作：喝一口水，或者把肩膀放下来。"]
+    ]
+  },
+  solve: {
+    title: "一起想办法",
+    when: "适合已经说清楚难受，想处理一个现实问题的时候。",
+    input: "我和同事沟通总是卡住，不知道下一步怎么办",
+    output: "问题边界、可控部分、最小动作和备用动作",
+    result: "不同时解决全部，只推进今天能控制的一格。",
+    flow: [
+      ["user", "我和同事沟通总是卡住，不知道下一步怎么办。"],
+      ["bot", "我们先把目标缩小：这次沟通最希望得到的结果是什么？"],
+      ["user", "希望他明确什么时候能交给我。"],
+      ["bot", "你能控制的是把请求说具体。最小动作可以是写一句：我需要在周三前收到材料，你今天方便确认时间吗？"],
+      ["bot", "如果对方仍不回应，备用动作是把进度风险同步给负责人，而不是继续一个人等。"]
     ]
   },
   breathe: {
@@ -411,7 +441,7 @@ const focusFlows = {
   }
 };
 
-const guidedToolKeys = new Set(["untangle", "play", "support"]);
+const guidedToolKeys = new Set(["untangle", "play", "solve", "support"]);
 
 const guidedToolDefinitions = {
   untangle: {
@@ -429,6 +459,14 @@ const guidedToolDefinitions = {
     totalSteps: 4,
     placeholder: "一行一个压力点，或者用逗号隔开",
     firstPrompt: "把现在压着你的 1-5 件事写下来。一行一个，或者用逗号隔开。先不用排序。"
+  },
+  solve: {
+    title: "一起想办法",
+    badge: "现实问题",
+    intro: "先确定一个具体问题，再找今天能控制的一小格。",
+    totalSteps: 4,
+    placeholder: "先用一句话写最想解决的问题",
+    firstPrompt: "这次最想解决的现实问题是什么？只写一个，越具体越好。"
   },
   support: {
     title: "求助计划",
@@ -510,6 +548,8 @@ function createToolFlow(tool) {
     answers: [],
     data: {},
     memoryCandidate: "",
+    methodCandidate: "",
+    actionCandidate: "",
     prompt: definition.firstPrompt,
     createdAt: Date.now()
   };
@@ -639,17 +679,20 @@ function renderToolWorkbench() {
     ${renderSupportDraft(flow)}
     <div class="tool-flow-actions">
       ${flow.step === 1 && flow.tool === "play" && !flow.completed ? '<button type="button" data-tool-action="pressure-done">完成分类</button>' : ""}
-      ${flow.completed && flow.memoryCandidate ? '<button type="button" data-tool-action="save-memory">保存到记忆</button>' : ""}
+      ${flow.completed && flow.methodCandidate ? '<button type="button" data-tool-action="save-method">这个方法对我有用</button>' : ""}
+      ${flow.completed && flow.actionCandidate ? '<button type="button" data-tool-action="save-action">下次回来问我</button>' : ""}
       ${flow.completed ? '<button type="button" data-tool-action="restart">再做一次</button>' : ""}
     </div>
   `;
   setToolComposer(true);
 }
 
-function finishGuidedTool(flow, message, memoryCandidate = "") {
+function finishGuidedTool(flow, message, { methodCandidate = "", actionCandidate = "" } = {}) {
   flow.completed = true;
-  flow.prompt = "这个工具已经做完。你可以保存有效方法，也可以直接回到普通聊天。";
-  flow.memoryCandidate = memoryCandidate;
+  flow.prompt = "这个工具已经做完。你可以保存有效方法、约定下次回访，也可以直接回到普通聊天。";
+  flow.memoryCandidate = methodCandidate;
+  flow.methodCandidate = methodCandidate;
+  flow.actionCandidate = actionCandidate;
   addMessage(message, "bot");
   renderToolWorkbench();
 }
@@ -681,7 +724,10 @@ function completeUntangle(flow) {
   finishGuidedTool(
     flow,
     `我帮你拆好了：\n事实：${fact}\n感受：${feeling}\n想法：${thought}\n需要：${need}\n小动作：${action}${scoreLine}\n\n所以这不是“你太敏感”这么简单，而是这件事碰到了你很在意的需要。`,
-    `拆心结对我有用：先分事实、感受、想法，再只做一个可控小动作。`
+    {
+      methodCandidate: "先分事实、感受和想法，再只做一个可控小动作",
+      actionCandidate: action
+    }
   );
   spirit.dataset.state = "relieved";
 }
@@ -694,7 +740,10 @@ function completePressure(flow) {
   finishGuidedTool(
     flow,
     `压力已经分成三栏：\n今天必须处理：${grouped.must.join("、") || "暂时没有"}\n可以延后：${grouped.later.join("、") || "暂时没有"}\n可以求助：${grouped.ask.join("、") || "暂时没有"}\n\n现在只做一个小动作：${action}。完成不了也没关系，可以继续缩小到 30 秒。${scoreLine}`,
-    `压力大时对我有用：先分成必须做、可延后、可求助，再只选一个小动作。`
+    {
+      methodCandidate: "压力大时先分成必须做、可延后、可求助，再只选一个小动作",
+      actionCandidate: action
+    }
   );
   spirit.dataset.state = "relieved";
 }
@@ -711,6 +760,22 @@ function buildSupportDraft(flow, tone = flow.data.tone || "soft") {
   return `${contact}，我现在状态不太好，不需要你马上解决问题，${need}。你方便陪我十分钟吗？`;
 }
 
+function completeSolve(flow) {
+  const problem = normalizeShortText(flow.data.problem);
+  const controllable = normalizeShortText(flow.data.controllable, "先确定我能控制的一部分");
+  const action = normalizeShortText(flow.data.action, "先完成一个两分钟动作");
+  const backup = normalizeShortText(flow.data.backup, "如果做不动，就把动作再缩小一半");
+  finishGuidedTool(
+    flow,
+    `我们先不解决全部：\n当前问题：${problem}\n我能控制：${controllable}\n今天的小动作：${action}\n遇到阻力时：${backup}\n\n只完成“小动作”就算推进，不需要顺便把整个问题处理完。`,
+    {
+      methodCandidate: "遇到现实问题时，先分清可控部分，再只推进一个最小动作",
+      actionCandidate: action
+    }
+  );
+  spirit.dataset.state = "relieved";
+}
+
 function completeSupport(flow) {
   flow.data.tone = flow.data.tone || "soft";
   flow.data.draft = buildSupportDraft(flow);
@@ -718,7 +783,7 @@ function completeSupport(flow) {
   finishGuidedTool(
     flow,
     `我先写了一条可以发出去的求助消息。发出后，尽量去明亮、有人经过的地方等回应。${urgent ? "如果你现在有立即危险，请直接联系 120、110 或附近医院急诊。" : ""}`,
-    `我可以求助时使用这句开口：${flow.data.draft}`
+    { methodCandidate: `需要求助时，我可以这样开口：${flow.data.draft}` }
   );
   if (urgent) openDialog(safetyDialog);
   spirit.dataset.state = urgent ? "guard" : "soft";
@@ -803,6 +868,26 @@ async function processGuidedToolAnswer(text) {
       flow.data.scoreAfter = extractScore(text);
       completePressure(flow);
     }
+  } else if (flow.tool === "solve") {
+    if (flow.step === 0) {
+      flow.data.problem = text;
+      flow.step = 1;
+      flow.prompt = "这件事里，哪些部分是你今天能够控制或影响的？";
+      addMessage("先把问题边界画出来。我们只拿回你能控制的部分，不替别人做决定。", "bot");
+    } else if (flow.step === 1) {
+      flow.data.controllable = text;
+      flow.step = 2;
+      flow.prompt = "把可控部分缩成一个两分钟到十分钟的小动作，会是什么？";
+      addMessage("可控部分已经找到了。下一步把标准降到“开始就算完成”。", "bot");
+    } else if (flow.step === 2) {
+      flow.data.action = text;
+      flow.step = 3;
+      flow.prompt = "最可能卡住你的阻力是什么？如果发生，备用动作可以怎么再小一点？";
+      addMessage("这个动作已经足够具体。我们再给它准备一个做不动时也能执行的备用版本。", "bot");
+    } else {
+      flow.data.backup = text;
+      completeSolve(flow);
+    }
   } else if (flow.tool === "support") {
     if (flow.step === 0) {
       flow.data.contact = normalizeShortText(text, "你");
@@ -819,6 +904,13 @@ async function processGuidedToolAnswer(text) {
 }
 
 function startGuidedTool(tool = mode) {
+  if (tool === "hold") {
+    activeToolFlow = null;
+    renderToolWorkbench();
+    addMessage("我在。你不用把事情讲完整，先说最想被我听见的那一句就好。", "bot");
+    input.focus();
+    return;
+  }
   if (!guidedToolKeys.has(tool)) {
     activeToolFlow = null;
     renderToolWorkbench();
@@ -833,6 +925,114 @@ function startGuidedTool(tool = mode) {
   spirit.dataset.state = tool === "support" ? "soft" : "thinking";
   renderToolWorkbench();
   input.focus();
+}
+
+const methodCategoryLabels = {
+  body: "身体",
+  environment: "环境",
+  emotion: "情绪",
+  relationship: "关系",
+  action: "行动"
+};
+
+const actionStatusLabels = {
+  pending: "等待回访",
+  done: "已完成",
+  partial: "做了一点",
+  cancelled: "已取消"
+};
+
+function localDateKey(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function ensureProfileShape(profile) {
+  profile.memories = Array.isArray(profile.memories) ? profile.memories : [];
+  profile.methods = Array.isArray(profile.methods) ? profile.methods : [];
+  profile.actions = Array.isArray(profile.actions) ? profile.actions : [];
+  profile.dailyCheckins = Array.isArray(profile.dailyCheckins) ? profile.dailyCheckins : [];
+  profile.safetyPlan ||= null;
+  return profile;
+}
+
+function latestDailyCheckin() {
+  return activeProfile?.dailyCheckins?.at(-1) || null;
+}
+
+function recommendTool({ daily = latestDailyCheckin(), text = "" } = {}) {
+  const clean = String(text || "");
+  if (/自杀|轻生|不想活|伤害自己|自残|不安全|撑不住|不想一个人/.test(clean)) {
+    return { tool: "support", reason: "先把真人支持和安全放在前面" };
+  }
+  if (/心慌|胸口|呼吸|紧绷|停不下来/.test(clean) || daily?.preference === "calm" || daily?.energy === 1) {
+    return { tool: "breathe", reason: "先让身体回到稍微稳定一点的位置" };
+  }
+  if (/怎么办|怎么处理|下一步|解决|计划|沟通|选择/.test(clean) || daily?.preference === "solve") {
+    return { tool: "solve", reason: "把现实问题缩成今天能推进的一步" };
+  }
+  if (/好多事|来不及|忙不过来|压力|任务|工作|考试|汇报/.test(clean) || daily?.stress === 3) {
+    return { tool: "play", reason: "先分清必须做、可延后和可求助" };
+  }
+  if (/反复想|是不是我|内耗|想不通|敏感|关系|委屈/.test(clean)) {
+    return { tool: "untangle", reason: "把事实、感受和脑内猜测分开" };
+  }
+  const effectiveMethod = activeProfile?.methods?.find((item) => item.effectiveness === "effective");
+  if (effectiveMethod) return { tool: "hold", reason: `先听你说；你也可以用之前有效的“${effectiveMethod.text}”` };
+  return { tool: "hold", reason: daily?.preference === "listen" ? "按你的选择，先听你把话说完" : "先听你把这句话说完" };
+}
+
+function applyToolRecommendation(recommendation) {
+  if (!recommendation || !toolLabels[recommendation.tool]) return;
+  mode = recommendation.tool;
+  contextTool.dataset.tool = mode;
+  contextToolTitle.textContent = toolLabels[mode].split(" · ")[0];
+  contextToolReason.textContent = recommendation.reason;
+  selectedTool.textContent = toolLabels[mode];
+  conversationState.textContent = recommendation.reason;
+  toolGrid.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.tool === mode));
+}
+
+function saveMethod(text, category = "action", source = "manual") {
+  if (!activeProfile) return false;
+  const clean = normalizeShortText(text, "");
+  if (!clean || activeProfile.methods.some((item) => item.text === clean)) return false;
+  activeProfile.methods = [{
+    id: createSessionId(),
+    text: clean,
+    category: methodCategoryLabels[category] ? category : "action",
+    effectiveness: "untested",
+    source,
+    createdAt: Date.now()
+  }, ...activeProfile.methods].slice(0, 30);
+  saveProfile();
+  renderMemoryList();
+  return true;
+}
+
+function saveAction(text, source = "chat") {
+  if (!activeProfile) return false;
+  const clean = normalizeShortText(text, "");
+  if (!clean) return false;
+  activeProfile.actions = [{
+    id: createSessionId(),
+    text: clean,
+    source,
+    status: "pending",
+    dueAt: Date.now(),
+    createdAt: Date.now()
+  }, ...activeProfile.actions].slice(0, 30);
+  saveProfile();
+  renderMemoryList();
+  return true;
+}
+
+function renderPendingFollowup() {
+  if (!activeProfile) return;
+  const action = activeProfile.actions.find((item) => item.status === "pending" && item.dueAt <= Date.now() && item.createdAt < pageOpenedAt);
+  pendingFollowupId = action?.id || null;
+  followupPanel.hidden = !action;
+  if (action) followupAction.textContent = action.text;
 }
 
 function profileKey(name) {
@@ -853,60 +1053,90 @@ function saveProfile() {
 }
 
 function showProfile(profile) {
-  activeProfile = profile;
+  activeProfile = ensureProfileShape(profile);
   conversationHistory = normalizeStoredHistory(profile.conversation);
   sessionId = typeof profile.sessionId === "string" && profile.sessionId ? profile.sessionId : createSessionId();
   profileName.value = profile.name;
   welcomeGate.hidden = true;
-  if ((profile.checkin || []).length >= checkinQuestions.length) sampleConversation.hidden = true;
+  sampleConversation.hidden = true;
   renderConversationHistory();
   renderMemoryList();
+  const today = profile.dailyCheckins.find((item) => item.date === localDateKey());
+  if (today) {
+    checkinPanel.hidden = true;
+    applyToolRecommendation(recommendTool({ daily: today }));
+    renderPendingFollowup();
+  } else {
+    startCheckin();
+    followupPanel.hidden = true;
+  }
   if (profile.safetyPlan) {
     safetyContact.value = profile.safetyPlan.contact || "";
+    safetyWarnings.value = profile.safetyPlan.warnings || "";
+    safetyCalming.value = profile.safetyPlan.calming || "";
+    safetyPlace.value = profile.safetyPlan.place || "";
+    safetyProfessional.value = profile.safetyPlan.professional || "";
     document.querySelectorAll("[data-safety-step]").forEach((input) => {
       input.checked = profile.safetyPlan.steps?.includes(input.dataset.safetyStep) || false;
     });
   }
 }
 
-function renderCheckinQuestion() {
-  const question = checkinQuestions[checkinStep];
-  checkinCount.textContent = `${checkinStep + 1} / ${checkinQuestions.length}`;
-  checkinProgress.style.width = `${(checkinStep / checkinQuestions.length) * 100}%`;
-  const prompt = document.createElement("article");
-  prompt.className = "checkin-bubble bot";
-  prompt.textContent = question;
-  checkinThread.appendChild(prompt);
-  checkinThread.scrollTop = checkinThread.scrollHeight;
-  checkinAnswer.focus();
-}
-
 function startCheckin() {
-  checkinStep = 0;
-  checkinThread.innerHTML = "";
+  dailyDraft = { mood: null, energy: null, stress: null, causes: [], preference: null };
+  checkinTitle.textContent = "今天的你，大概在哪里？";
+  checkinForm.querySelectorAll(".active").forEach((button) => button.classList.remove("active"));
+  dailyNote.value = "";
   checkinPanel.hidden = false;
-  renderCheckinQuestion();
 }
 
-function finishCheckin() {
-  checkinProgress.style.width = "100%";
+function finishCheckin(record) {
   checkinPanel.classList.add("checkin-complete");
   window.setTimeout(() => {
     checkinPanel.hidden = true;
     checkinPanel.classList.remove("checkin-complete");
-    sampleConversation.hidden = true;
-  }, 500);
-  addMessage("谢谢你告诉我这些。接下来我们就按你的节奏聊，不需要再回答固定问题了。", "bot");
+    renderPendingFollowup();
+  }, 320);
+  applyToolRecommendation(recommendTool({ daily: record }));
+  const preferenceReply = record.preference === "solve"
+    ? "我知道了。今天我们不只停在安慰，可以一起把最现实的问题缩成一个小步骤。"
+    : record.preference === "calm"
+      ? "我知道了。今天先不急着分析，让身体和情绪缓下来一点。"
+      : "我知道了。今天我先认真听，不催你马上想办法。";
+  addMessage(preferenceReply, "bot");
 }
 
 function renderMemoryList() {
   if (!activeProfile) return;
   const memories = activeProfile.memories || [];
+  const methods = activeProfile.methods || [];
+  const actions = activeProfile.actions || [];
   const turns = Math.floor(conversationHistory.length / 2);
   document.querySelector("#conversationSummary").textContent = turns ? `已在这台设备保存最近 ${turns} 轮对话` : "这台设备还没有保存最近对话";
   memoryList.innerHTML = memories.length
     ? memories.map((memory, index) => `<div class="memory-item"><span>${escapeHtml(memory.text)}</span><button type="button" data-memory-index="${index}">删除</button></div>`).join("")
     : `<p class="dialog-copy">还没有保存的内容。只有你主动点击“记住这件事”，心蕊才会把它放进这里。</p>`;
+  methodList.innerHTML = methods.length
+    ? methods.map((method) => `
+      <div class="method-item">
+        <div><span>${escapeHtml(methodCategoryLabels[method.category] || "行动")}</span><strong>${escapeHtml(method.text)}</strong></div>
+        <div class="method-feedback" aria-label="方法效果">
+          <button class="${method.effectiveness === "effective" ? "active" : ""}" type="button" data-method-effect="effective" data-method-id="${method.id}">有效</button>
+          <button class="${method.effectiveness === "general" ? "active" : ""}" type="button" data-method-effect="general" data-method-id="${method.id}">一般</button>
+          <button class="${method.effectiveness === "unsuitable" ? "active" : ""}" type="button" data-method-effect="unsuitable" data-method-id="${method.id}">不适合</button>
+          <button type="button" data-method-delete="${method.id}">删除</button>
+        </div>
+      </div>
+    `).join("")
+    : `<p class="dialog-copy">还没有验证过的方法。把确实愿意再试的方法放进来，之后心蕊会优先参考。</p>`;
+  actionList.innerHTML = actions.length
+    ? actions.map((action) => `
+      <div class="action-item">
+        <div><span>${escapeHtml(actionStatusLabels[action.status] || "已记录")}</span><strong>${escapeHtml(action.text)}</strong></div>
+        <button type="button" data-action-delete="${action.id}">删除</button>
+      </div>
+    `).join("")
+    : `<p class="dialog-copy">还没有约定回访的小行动。完成工具后，可以选择“下次回来问我”。</p>`;
 }
 
 function openDialog(dialog) {
@@ -928,9 +1158,11 @@ function returnToProfileGate() {
   sessionId = createSessionId();
   messages.innerHTML = "";
   input.value = "";
-  checkinAnswer.value = "";
-  checkinThread.innerHTML = "";
+  dailyNote.value = "";
+  activeToolFlow = null;
+  pendingFollowupId = null;
   checkinPanel.hidden = true;
+  followupPanel.hidden = true;
   closeDialogs();
   setQuietMode(false);
   welcomeGate.hidden = false;
@@ -964,7 +1196,6 @@ function initProfileAndMvp() {
   const existing = lastName ? loadProfile(lastName) : null;
   if (existing) {
     showProfile(existing);
-    if (!(existing.checkin || []).length) startCheckin();
   }
 
   profileForm.addEventListener("submit", (event) => {
@@ -972,32 +1203,60 @@ function initProfileAndMvp() {
     const name = profileName.value.trim();
     if (!name) return;
     const existingProfile = loadProfile(name);
-    activeProfile = existingProfile || { name, memories: [], safetyPlan: null, createdAt: Date.now() };
+    activeProfile = ensureProfileShape(existingProfile || { name, memories: [], safetyPlan: null, createdAt: Date.now() });
     localStorage.setItem("heartAiriLastProfile", name);
     saveProfile();
     showProfile(activeProfile);
-    if (!(activeProfile.checkin || []).length) startCheckin();
+  });
+
+  [dailyMood, dailyEnergy, dailyStress, dailyPreference].forEach((group) => {
+    group.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-value]");
+      if (!button) return;
+      group.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+      const key = group === dailyMood ? "mood" : group === dailyEnergy ? "energy" : group === dailyStress ? "stress" : "preference";
+      dailyDraft[key] = key === "preference" ? button.dataset.value : Number(button.dataset.value);
+      checkinTitle.textContent = "今天的你，大概在哪里？";
+    });
+  });
+
+  dailyCauses.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-value]");
+    if (!button) return;
+    button.classList.toggle("active");
+    dailyDraft.causes = [...dailyCauses.querySelectorAll("button.active")].map((item) => item.dataset.value);
   });
 
   checkinForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const answer = checkinAnswer.value.trim();
-    if (!answer) return;
-    const reply = document.createElement("article");
-    reply.className = "checkin-bubble user";
-    reply.textContent = answer;
-    checkinThread.appendChild(reply);
-    if (activeProfile) {
-      activeProfile.checkin = [...(activeProfile.checkin || []), { question: checkinQuestions[checkinStep], answer, createdAt: Date.now() }].slice(-4);
-      saveProfile();
-    }
-    checkinAnswer.value = "";
-    checkinStep += 1;
-    if (checkinStep >= checkinQuestions.length) {
-      finishCheckin();
+    if (!activeProfile) return;
+    if (!dailyDraft.mood || !dailyDraft.energy || !dailyDraft.stress || !dailyDraft.preference) {
+      checkinTitle.textContent = "再选一下心情、精力、压力和陪伴方式";
       return;
     }
-    renderCheckinQuestion();
+    const record = {
+      ...dailyDraft,
+      note: dailyNote.value.trim(),
+      date: localDateKey(),
+      createdAt: Date.now()
+    };
+    activeProfile.dailyCheckins = [...activeProfile.dailyCheckins.filter((item) => item.date !== record.date), record].slice(-30);
+    mood = record.mood <= 1 ? "storm" : record.mood === 2 ? "rainy" : record.mood === 3 ? "cloudy" : "sunny";
+    setActive("moods", "mood", mood);
+    document.body.dataset.mood = mood;
+    saveProfile();
+    finishCheckin(record);
+  });
+
+  document.querySelector("#skipCheckin").addEventListener("click", () => {
+    if (!activeProfile) return;
+    const record = { skipped: true, date: localDateKey(), createdAt: Date.now() };
+    activeProfile.dailyCheckins = [...activeProfile.dailyCheckins.filter((item) => item.date !== record.date), record].slice(-30);
+    saveProfile();
+    checkinPanel.hidden = true;
+    applyToolRecommendation(recommendTool({ daily: null }));
+    renderPendingFollowup();
+    addMessage("好，今天不填也可以。你想从哪一句开始都行。", "bot");
   });
 
   quietMode.addEventListener("click", () => {
@@ -1033,6 +1292,76 @@ function initProfileAndMvp() {
     renderMemoryList();
   });
 
+  memoryTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-memory-tab]");
+    if (!button) return;
+    memoryTabs.querySelectorAll("button").forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-memory-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.memoryPanel !== button.dataset.memoryTab;
+    });
+  });
+
+  methodForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = methodInput.value.trim();
+    if (!text) return;
+    saveMethod(text, methodCategory.value, "manual");
+    methodInput.value = "";
+  });
+
+  methodList.addEventListener("click", (event) => {
+    if (!activeProfile) return;
+    const effectButton = event.target.closest("[data-method-effect]");
+    const deleteButton = event.target.closest("[data-method-delete]");
+    if (effectButton) {
+      const method = activeProfile.methods.find((item) => item.id === effectButton.dataset.methodId);
+      if (!method) return;
+      method.effectiveness = effectButton.dataset.methodEffect;
+      method.lastRatedAt = Date.now();
+      saveProfile();
+      renderMemoryList();
+      applyToolRecommendation(recommendTool());
+      return;
+    }
+    if (deleteButton) {
+      activeProfile.methods = activeProfile.methods.filter((item) => item.id !== deleteButton.dataset.methodDelete);
+      saveProfile();
+      renderMemoryList();
+    }
+  });
+
+  actionList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-action-delete]");
+    if (!button || !activeProfile) return;
+    activeProfile.actions = activeProfile.actions.filter((item) => item.id !== button.dataset.actionDelete);
+    saveProfile();
+    renderMemoryList();
+    renderPendingFollowup();
+  });
+
+  followupPanel.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-followup-status]");
+    if (!button || !activeProfile || !pendingFollowupId) return;
+    const action = activeProfile.actions.find((item) => item.id === pendingFollowupId);
+    if (!action) return;
+    const result = button.dataset.followupStatus;
+    action.status = result === "pending" ? "pending" : result;
+    if (result === "pending") action.dueAt = Date.now() + 24 * 60 * 60 * 1000;
+    action.lastResult = result;
+    action.lastCheckedAt = Date.now();
+    saveProfile();
+    followupPanel.hidden = true;
+    pendingFollowupId = null;
+    const replies = {
+      done: "你把这一步做完了。我更在意的是：这个动作有没有让事情轻一点，而不是完成得漂不漂亮。",
+      partial: "做了一点也算真实推进。我们可以保留已经完成的部分，剩下的继续缩小。",
+      pending: "没开始不等于失败。可能是太难、忘记了，或者今天确实没力气；这次先不追着你问。",
+      cancelled: "可以取消。计划是为你服务的，不合适就放下，不需要向我交作业。"
+    };
+    addMessage(replies[result], "bot");
+    renderMemoryList();
+  });
+
   document.querySelector("#clearProfile").addEventListener("click", () => {
     if (!activeProfile || !window.confirm("确定清除这个昵称的全部记录吗？")) return;
     localStorage.removeItem(profileKey(activeProfile.name));
@@ -1059,15 +1388,19 @@ function initProfileAndMvp() {
   });
 
   document.querySelector("#copyHelpMessage").addEventListener("click", async (event) => {
-    const contact = safetyContact.value.trim() || "你信任的人";
-    const copied = await copyText(`我现在状态不太好，不需要你解决问题，可以陪我十分钟吗？我想和${contact}联系一下。`);
+    const contact = safetyContact.value.trim() || "你";
+    const copied = await copyText(`${contact}，我现在状态不太好，不需要你马上解决问题，可以联系我并陪我十分钟吗？`);
     event.target.textContent = copied ? "已复制求助消息" : "复制失败，请手动复制";
   });
 
   document.querySelector("#saveSafetyPlan").addEventListener("click", () => {
     if (!activeProfile) return;
     activeProfile.safetyPlan = {
+      warnings: safetyWarnings.value.trim(),
+      calming: safetyCalming.value.trim(),
+      place: safetyPlace.value.trim(),
       contact: safetyContact.value.trim(),
+      professional: safetyProfessional.value.trim(),
       steps: [...document.querySelectorAll("[data-safety-step]")].filter((input) => input.checked).map((input) => input.dataset.safetyStep),
       updatedAt: Date.now()
     };
@@ -1100,7 +1433,12 @@ async function chatWithHeart(text) {
       sessionId,
       nickname: activeProfile?.name || "",
       history: conversationHistory.slice(-24),
-      memories: (activeProfile?.memories || []).map((memory) => memory.text)
+      memories: [
+        ...(activeProfile?.memories || []).map((memory) => memory.text),
+        ...(activeProfile?.methods || []).filter((method) => method.effectiveness !== "unsuitable").map((method) => `对我可能有用的方法：${method.text}`)
+      ],
+      dailyState: latestDailyCheckin(),
+      preference: latestDailyCheckin()?.preference || ""
     })
   });
   if (!response.ok) throw new Error(`request failed: ${response.status}`);
@@ -1440,8 +1778,15 @@ function renderAspectMock(tile, index) {
 }
 
 async function runSelectedTool() {
+  const starterText = {
+    breathe: "我想先让身体稳定一点",
+    sleep: "我今晚脑子停不下来",
+    letter: "我现在对自己很失望",
+    boundary: "我想练习表达自己的边界",
+    tiny: "我想开始，但现在很难动起来"
+  };
   const payload = {
-    text: input.value.trim() || "我最近很焦虑，感觉没人懂我",
+    text: input.value.trim() || starterText[mode] || "我想先照顾一下现在的状态",
     mood,
     tool: mode
   };
@@ -1476,17 +1821,21 @@ async function handleToolWorkbenchAction(event) {
     return;
   }
 
-  if (action === "save-memory") {
-    if (!activeProfile || !flow.memoryCandidate) return;
-    const exists = (activeProfile.memories || []).some((memory) => memory.text === flow.memoryCandidate);
-    if (!exists) {
-      activeProfile.memories = [...(activeProfile.memories || []), { text: flow.memoryCandidate, createdAt: Date.now() }].slice(-30);
-      saveProfile();
-      renderMemoryList();
-    }
+  if (action === "save-method") {
+    if (!flow.methodCandidate) return;
+    saveMethod(flow.methodCandidate, flow.tool === "support" ? "relationship" : "action", flow.tool);
     button.textContent = "已保存";
     button.disabled = true;
-    addMessage("我记下这个有效方法了。之后你也可以在“我的记忆”里删掉它。", "bot");
+    addMessage("我把它放进“有效方法”了。以后你可以标记有效、一般或不适合，也可以随时删除。", "bot");
+    return;
+  }
+
+  if (action === "save-action") {
+    if (!flow.actionCandidate) return;
+    saveAction(flow.actionCandidate, flow.tool);
+    button.textContent = "已约定下次回访";
+    button.disabled = true;
+    addMessage("好。下次你打开心蕊时，我会问一次做起来怎么样；没做也可以直接说，不会追着你交作业。", "bot");
     return;
   }
 
@@ -1531,6 +1880,7 @@ async function handleToolWorkbenchAction(event) {
     flow.data.tone = button.dataset.tone;
     flow.data.draft = buildSupportDraft(flow, flow.data.tone);
     flow.memoryCandidate = `我可以求助时使用这句开口：${flow.data.draft}`;
+    flow.methodCandidate = `需要求助时，我可以这样开口：${flow.data.draft}`;
     renderToolWorkbench();
     return;
   }
@@ -1549,13 +1899,18 @@ async function handleToolWorkbenchAction(event) {
 toolGrid.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  mode = button.dataset.tool;
-  toolGrid.querySelectorAll("button").forEach((toolButton) => {
-    toolButton.classList.toggle("active", toolButton === button);
-  });
-  selectedTool.textContent = toolLabels[mode];
-  if (!activeToolFlow) renderToolMock(mode);
+  applyToolRecommendation({ tool: button.dataset.tool, reason: toolMocks[button.dataset.tool]?.when || "按你的选择开始" });
+  sampleConversation.hidden = true;
   spirit.dataset.state = mode === "play" ? "play" : mode === "breathe" ? "relieved" : "idle";
+});
+
+contextTool.addEventListener("click", () => startGuidedTool(contextTool.dataset.tool));
+
+allToolsToggle.addEventListener("click", () => {
+  const expanded = allToolsToggle.getAttribute("aria-expanded") === "true";
+  allToolsToggle.setAttribute("aria-expanded", String(!expanded));
+  allToolsToggle.textContent = expanded ? "更多工具" : "收起工具";
+  toolGrid.hidden = expanded;
 });
 
 runTool.textContent = "开始";
@@ -1584,6 +1939,7 @@ composer.addEventListener("submit", async (event) => {
     if (activeToolFlow && !activeToolFlow.completed) {
       await processGuidedToolAnswer(text);
     } else {
+      applyToolRecommendation(recommendTool({ text }));
       const result = await chatWithHeart(text);
       saveConversationTurn(text, result.reply);
     }
@@ -1600,7 +1956,8 @@ composer.addEventListener("submit", async (event) => {
 });
 
 renderCube(["事实：等待一句话", "感受：等待命名", "需要：被理解", "猜测：先放旁边", "可控：慢慢说完", "支持：心蕊陪着", "小步：说出来", "身体：呼吸三轮", "收束：今天到这里"]);
-renderToolMock(mode);
+sampleConversation.hidden = true;
+applyToolRecommendation(recommendTool({ daily: null }));
 restorePetPosition();
 enablePetDrag();
 initLive2DCharacter();

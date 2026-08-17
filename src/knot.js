@@ -34,6 +34,12 @@ const toolkit = {
     steps: ["找一个真实颜色", "动一动肩膀", "给这团心事起个外号"],
     prompt: "变轻不是逃避，是先把身体带回来。"
   },
+  solve: {
+    title: "一起想办法",
+    intent: "现实问题",
+    steps: ["确定一个具体问题", "分清今天能控制的部分", "选择一个最小动作", "准备更容易的备用动作"],
+    prompt: "不同时解决全部，我们只推进今天能控制的一格。"
+  },
   breathe: {
     title: "呼吸灯",
     intent: "身体安定",
@@ -102,6 +108,9 @@ function buildLocalReply({ fact, feeling, need, action, mode }) {
   if (mode === "support") {
     return "我们准备一条求助消息：“我现在状态不太好，不需要你解决问题，可以陪我十分钟吗？”";
   }
+  if (mode === "solve") {
+    return `我们先处理“${fact}”里你能控制的部分。今天不用解决全部，只选一个能推进的小动作：${action}。如果做不动，就把它再缩小一半。`;
+  }
   if (mode === "untangle") {
     return `我把它拆成三层：事实是“${fact}”，感受像“${feeling}”，需要可能是“${need}”。先不要急着评判，今天只做一步：${action}。`;
   }
@@ -118,6 +127,7 @@ export function localKnot(text, mood = "cloudy", mode = "hold") {
   const guess = /是不是|可能|应该|肯定|一定|总是|从来/.test(text) ? "这里混着猜测" : "猜测先放旁边";
   const actionMap = {
     play: "摸到一个真实颜色",
+    solve: "写下一个能推进的动作",
     untangle: "只写一句事实",
     breathe: "跟着呼吸灯三轮",
     sleep: "写下明天再处理",

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>心蕊 AIRI 二开版</title>
-    <link rel="stylesheet" href="/styles.css?v=20260817-guided-tools" />
+    <link rel="stylesheet" href="/styles.css?v=20260817-care-loop" />
   </head>
   <body>
     <section class="welcome-gate" id="welcomeGate" aria-labelledby="welcomeTitle">
@@ -27,16 +27,43 @@
         <div><p class="label">只属于你的心蕊</p><h2 id="memoryTitle">心蕊记住了什么</h2></div>
         <button class="icon-button" id="closeMemory" type="button" aria-label="关闭记忆">×</button>
       </div>
-      <p class="dialog-copy">最近对话会留在这台设备，用来保持上下文；只有你主动添加的内容才会作为长期记忆。</p>
-      <form class="memory-form" id="memoryForm">
-        <input id="memoryInput" maxlength="120" placeholder="例如：散步和听轻音乐能让我平静一点" />
-        <button type="submit">记住这件事</button>
-      </form>
-      <div class="memory-list" id="memoryList"></div>
-      <div class="conversation-storage">
-        <span id="conversationSummary">这台设备还没有保存最近对话</span>
-        <button class="text-button" id="clearConversation" type="button">清空最近对话</button>
+      <p class="dialog-copy">最近对话用于保持上下文；长期记忆和有效方法只有在你确认后才会保存。</p>
+      <div class="memory-tabs" id="memoryTabs" role="tablist" aria-label="记忆分类">
+        <button class="active" type="button" data-memory-tab="long">长期记忆</button>
+        <button type="button" data-memory-tab="methods">有效方法</button>
+        <button type="button" data-memory-tab="actions">行动回访</button>
+        <button type="button" data-memory-tab="conversation">最近对话</button>
       </div>
+      <section class="memory-tab-panel" data-memory-panel="long">
+        <form class="memory-form" id="memoryForm">
+          <input id="memoryInput" maxlength="120" placeholder="例如：我希望被认真听完，再一起想办法" />
+          <button type="submit">记住这件事</button>
+        </form>
+        <div class="memory-list" id="memoryList"></div>
+      </section>
+      <section class="memory-tab-panel" data-memory-panel="methods" hidden>
+        <form class="method-form" id="methodForm">
+          <input id="methodInput" maxlength="100" placeholder="例如：出门走十分钟" />
+          <select id="methodCategory" aria-label="方法分类">
+            <option value="body">身体</option>
+            <option value="environment">环境</option>
+            <option value="emotion">情绪</option>
+            <option value="relationship">关系</option>
+            <option value="action">行动</option>
+          </select>
+          <button type="submit">加入工具箱</button>
+        </form>
+        <div class="method-list" id="methodList"></div>
+      </section>
+      <section class="memory-tab-panel" data-memory-panel="actions" hidden>
+        <div class="action-list" id="actionList"></div>
+      </section>
+      <section class="memory-tab-panel" data-memory-panel="conversation" hidden>
+        <div class="conversation-storage">
+          <span id="conversationSummary">这台设备还没有保存最近对话</span>
+          <button class="text-button" id="clearConversation" type="button">清空最近对话</button>
+        </div>
+      </section>
       <button class="text-button danger-button" id="clearProfile" type="button">清除这个昵称的全部记录</button>
     </section>
 
@@ -51,9 +78,22 @@
         <label><input type="checkbox" data-safety-step="联系一个可信任的人，不独处" /> 我已经联系了一个可信任的人</label>
         <label><input type="checkbox" data-safety-step="喝水、坐下、慢慢呼气六秒" /> 我正在做一个让身体稳定下来的动作</label>
       </div>
-      <div class="safety-contact">
-        <label for="safetyContact">我可以联系谁？</label>
-        <input id="safetyContact" maxlength="60" placeholder="姓名或称呼，不必填写完整联系方式" />
+      <div class="safety-plan-fields">
+        <label>状态变差时，我通常会出现什么表现？
+          <textarea id="safetyWarnings" rows="2" maxlength="240" placeholder="例如：不回消息、反复想着消失、把自己关起来"></textarea>
+        </label>
+        <label>什么能让我暂时缓下来？
+          <textarea id="safetyCalming" rows="2" maxlength="240" placeholder="例如：开灯、喝水、坐到家人旁边"></textarea>
+        </label>
+        <label>我可以去哪个相对安全的地方？
+          <input id="safetyPlace" maxlength="100" placeholder="例如：客厅、便利店、朋友家、医院急诊" />
+        </label>
+        <label>我可以联系谁？
+          <input id="safetyContact" maxlength="100" placeholder="姓名或称呼，不必填写完整联系方式" />
+        </label>
+        <label>我可以联系的专业支持
+          <input id="safetyProfessional" maxlength="140" placeholder="例如：咨询师、医生、附近医院" />
+        </label>
       </div>
       <div class="safety-actions">
         <button type="button" id="copyHelpMessage">复制求助消息</button>
@@ -109,14 +149,20 @@
 
         <div class="rail-section tools-section">
           <div class="rail-section-head">
-            <p class="label">工作工具</p>
-            <button type="button" id="runTool">运行</button>
+            <p class="label">现在适合</p>
+            <button type="button" id="runTool">开始</button>
           </div>
+          <button class="context-tool" id="contextTool" type="button" data-tool="hold">
+            <strong id="contextToolTitle">先接住</strong>
+            <span id="contextToolReason">先听你把这句话说完</span>
+          </button>
           <div class="selected-tool" id="selectedTool">先接住 · 情绪承接</div>
-          <div class="tool-list" id="toolGrid">
+          <button class="all-tools-toggle" id="allToolsToggle" type="button" aria-expanded="false">更多工具</button>
+          <div class="tool-list" id="toolGrid" hidden>
             <button class="active" type="button" data-tool="hold"><strong>先接住</strong><span>情绪承接</span></button>
             <button type="button" data-tool="untangle"><strong>拆心结</strong><span>认知梳理</span></button>
-            <button type="button" data-tool="play"><strong>变轻点</strong><span>减压游戏</span></button>
+            <button type="button" data-tool="play"><strong>压力拆解</strong><span>分清轻重</span></button>
+            <button type="button" data-tool="solve"><strong>一起想办法</strong><span>现实问题</span></button>
             <button type="button" data-tool="breathe"><strong>呼吸灯</strong><span>身体安定</span></button>
             <button type="button" data-tool="sleep"><strong>睡前卸载</strong><span>收工仪式</span></button>
             <button type="button" data-tool="letter"><strong>写给自己</strong><span>自我同情</span></button>
@@ -144,17 +190,59 @@
         <section class="checkin-panel panel" id="checkinPanel" hidden aria-labelledby="checkinTitle">
           <div class="checkin-topline">
             <div>
-              <p class="label">第一次见面，先认识一下</p>
-              <h2 id="checkinTitle">我想先听懂你今天的心情</h2>
+              <p class="label">今日状态</p>
+              <h2 id="checkinTitle">今天的你，大概在哪里？</h2>
             </div>
-            <span class="checkin-count" id="checkinCount">1 / 4</span>
+            <button class="text-button" id="skipCheckin" type="button">今天先不填</button>
           </div>
-          <div class="checkin-progress" aria-hidden="true"><span id="checkinProgress"></span></div>
-          <div class="checkin-thread" id="checkinThread"></div>
           <form class="checkin-form" id="checkinForm">
-            <textarea id="checkinAnswer" rows="2" maxlength="500" placeholder="不用组织得很完整，想到什么就说什么"></textarea>
-            <button type="submit">回答</button>
+            <div class="checkin-question">
+              <span>心情</span>
+              <div class="checkin-options" id="dailyMood">
+                <button type="button" data-value="1">很差</button><button type="button" data-value="2">低落</button><button type="button" data-value="3">一般</button><button type="button" data-value="4">还好</button><button type="button" data-value="5">不错</button>
+              </div>
+            </div>
+            <div class="checkin-question">
+              <span>精力</span>
+              <div class="checkin-options" id="dailyEnergy">
+                <button type="button" data-value="1">很少</button><button type="button" data-value="2">一般</button><button type="button" data-value="3">充足</button>
+              </div>
+            </div>
+            <div class="checkin-question">
+              <span>压力</span>
+              <div class="checkin-options" id="dailyStress">
+                <button type="button" data-value="1">低</button><button type="button" data-value="2">中</button><button type="button" data-value="3">高</button>
+              </div>
+            </div>
+            <div class="checkin-question wide">
+              <span>可能和什么有关</span>
+              <div class="checkin-options causes" id="dailyCauses">
+                <button type="button" data-value="工作">工作</button><button type="button" data-value="学业">学业</button><button type="button" data-value="关系">关系</button><button type="button" data-value="家庭">家庭</button><button type="button" data-value="身体">身体</button><button type="button" data-value="睡眠">睡眠</button><button type="button" data-value="说不清">说不清</button>
+              </div>
+            </div>
+            <div class="checkin-question wide">
+              <span>现在更希望</span>
+              <div class="checkin-options" id="dailyPreference">
+                <button type="button" data-value="listen">先听我说</button><button type="button" data-value="solve">一起想办法</button><button type="button" data-value="calm">先缓一下</button>
+              </div>
+            </div>
+            <textarea class="checkin-note" id="dailyNote" rows="2" maxlength="300" placeholder="想补充一句也可以，不必说完整"></textarea>
+            <button class="checkin-submit" type="submit">告诉心蕊</button>
           </form>
+        </section>
+
+        <section class="followup-panel panel" id="followupPanel" hidden aria-labelledby="followupTitle">
+          <div>
+            <p class="label">上次的小行动</p>
+            <h2 id="followupTitle">后来做起来怎么样？</h2>
+            <p id="followupAction"></p>
+          </div>
+          <div class="followup-actions">
+            <button type="button" data-followup-status="done">做完了</button>
+            <button type="button" data-followup-status="partial">做了一点</button>
+            <button type="button" data-followup-status="pending">还没开始</button>
+            <button type="button" data-followup-status="cancelled">不想做了</button>
+          </div>
         </section>
 
         <div class="main-grid">
@@ -208,6 +296,6 @@
     <script src="/vendor/live2dcubismcore.min.js"></script>
     <script src="/vendor/pixi.min.js"></script>
     <script src="/vendor/pixi-live2d-cubism4.min.js"></script>
-    <script src="/app.js?v=20260817-guided-tools"></script>
+    <script src="/app.js?v=20260817-care-loop"></script>
   </body>
 </html>

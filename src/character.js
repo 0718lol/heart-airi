@@ -2,6 +2,7 @@ const modeNames = {
   hold: "先接住",
   untangle: "拆心结",
   play: "变轻点",
+  solve: "一起想办法",
   breathe: "呼吸安定",
   sleep: "睡前卸载",
   letter: "自我同情",
@@ -53,7 +54,7 @@ export function normalizeMemories(value) {
     .slice(-12);
 }
 
-export function composeChatMessages({ text, mood, mode, history, memories, nickname, safetyLevel }) {
+export function composeChatMessages({ text, mood, mode, history, memories, nickname, safetyLevel, dailyState, preference }) {
   const safeHistory = normalizeHistory(history);
   const safeMemories = normalizeMemories(memories);
   const context = {
@@ -61,6 +62,8 @@ export function composeChatMessages({ text, mood, mode, history, memories, nickn
     mood: moodNames[mood] || "未选择",
     supportMode: modeNames[mode] || modeNames.hold,
     safetyLevel: cleanText(safetyLevel, 32) || "support",
+    preferredSupport: { listen: "先倾听，不急着建议", solve: "一起处理现实问题", calm: "先帮助情绪和身体安定" }[preference] || "未选择",
+    todayState: dailyState || undefined,
     userSavedMemories: safeMemories
   };
 

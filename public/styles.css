@@ -1914,6 +1914,278 @@ textarea:focus {
   opacity: 1;
 }
 
+.memory-dialog,
+.safety-dialog {
+  width: min(94vw, 700px);
+}
+
+.memory-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.memory-tabs button,
+.method-form button,
+.method-feedback button,
+.action-item button,
+.all-tools-toggle,
+.context-tool,
+.followup-actions button,
+.checkin-options button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #31534b;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.memory-tabs button.active,
+.method-feedback button.active,
+.checkin-options button.active {
+  border-color: rgba(63, 165, 132, 0.52);
+  color: #123e34;
+  background: #ddfff0;
+  box-shadow: 0 0 0 3px rgba(120, 223, 187, 0.14);
+}
+
+.memory-tab-panel {
+  min-height: 150px;
+}
+
+.method-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px auto;
+  gap: 8px;
+}
+
+.method-form input,
+.method-form select,
+.safety-plan-fields input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.method-list,
+.action-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.method-item,
+.action-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.method-item > div:first-child,
+.action-item > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.method-item span,
+.action-item span {
+  color: #4e7168;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.method-item strong,
+.action-item strong {
+  color: #2d4640;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.method-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.method-feedback button,
+.action-item button {
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.method-feedback button:last-child,
+.action-item > button {
+  color: #a34d49;
+}
+
+.safety-plan-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.safety-plan-fields label {
+  display: grid;
+  gap: 7px;
+  color: #38544c;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.safety-plan-fields label:first-child,
+.safety-plan-fields label:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.safety-plan-fields textarea {
+  min-height: 72px;
+  max-height: 130px;
+  font-weight: 500;
+}
+
+.context-tool {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 72px;
+  padding: 11px 12px;
+  border-color: rgba(63, 165, 132, 0.28);
+  background: #fff;
+  text-align: left;
+}
+
+.context-tool strong {
+  color: #213d35;
+  font-size: 15px;
+}
+
+.context-tool span {
+  color: #4e7168;
+  line-height: 1.45;
+}
+
+.all-tools-toggle {
+  width: 100%;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.main-workspace {
+  display: flex;
+  flex-direction: column;
+}
+
+.main-grid {
+  flex: 1 1 auto;
+}
+
+.dialogue {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.dialogue > .sample-conversation { grid-row: 1; }
+.dialogue > .messages { grid-row: 2; }
+.dialogue > .composer { grid-row: 3; }
+
+.checkin-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.checkin-question {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.checkin-question > span {
+  color: #38544c;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.checkin-question.wide,
+.checkin-note {
+  grid-column: 1 / -1;
+}
+
+.checkin-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.checkin-options button {
+  flex: 1 1 54px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.checkin-options.causes button {
+  flex: 0 1 74px;
+}
+
+.checkin-note {
+  min-height: 50px;
+}
+
+.checkin-submit {
+  grid-column: 3;
+  justify-self: end;
+  min-width: 112px;
+}
+
+.followup-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  border-color: rgba(230, 165, 71, 0.3);
+  background: #fffaf0;
+}
+
+.followup-panel h2 {
+  margin: 0 0 5px;
+  color: #344943;
+  font-size: 18px;
+}
+
+.followup-panel p:not(.label) {
+  margin: 0;
+  color: #5b625d;
+  line-height: 1.5;
+}
+
+.followup-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.followup-actions button {
+  padding: 0 9px;
+  background: #fff;
+}
+
 @keyframes cloudDrift {
   0%, 100% { translate: 0 0; }
   50% { translate: 18px -4px; }
@@ -2080,8 +2352,30 @@ textarea:focus {
   .quick-actions small { font-size: 10px; }
 
   .memory-form,
-  .safety-actions {
+  .method-form,
+  .safety-actions,
+  .safety-plan-fields,
+  .method-item,
+  .action-item {
     grid-template-columns: 1fr;
+  }
+
+  .memory-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .safety-plan-fields label:first-child,
+  .safety-plan-fields label:nth-child(2) {
+    grid-column: auto;
+  }
+
+  .followup-panel {
+    display: grid;
+  }
+
+  .followup-actions,
+  .method-feedback {
+    justify-content: flex-start;
   }
 
   .pressure-columns {
@@ -2094,6 +2388,12 @@ textarea:focus {
 
   .checkin-form button {
     width: 100%;
+  }
+
+  .checkin-submit,
+  .checkin-question.wide,
+  .checkin-note {
+    grid-column: 1;
   }
 
 }
