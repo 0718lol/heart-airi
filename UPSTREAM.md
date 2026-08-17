@@ -20,18 +20,30 @@
 
 当前策略:
 
-先做一个 AIRI-style 的本地承接版，而不是空等完整上游:
+保持心蕊的轻量产品形态，选择性迁移 AIRI 的核心思想，而不是合并整套 Vue/pnpm monorepo:
 
 - `public/` 是角色舞台层。
-- `server.js` 是 agent / safety / knot extraction 网关。
+- `server.js` 只负责 HTTP 路由和 SSE 传输。
+- `src/agent.js` 负责会话边界、上下文编排和模型降级。
+- `src/providers/` 提供模型无关边界，当前先实现 OpenAI 兼容接口。
+- `src/safety.js` 在模型调用前执行确定性危机判断。
+- 对话与长期记忆保存在浏览器本地，服务端不持久化心理内容。
 - API 路径保留为后续接 AIRI core-agent 或 stage-web 的边界:
   - `/api/safety/check`
   - `/api/knot/extract`
   - `/api/chat`
 
+已完成的 AIRI 思路迁移:
+
+- 多轮上下文与会话 ID。
+- Provider 边界、SSE 流式回复和失败降级。
+- 固定角色人格与模型外安全层。
+- 用户可清除的本地对话、可显式管理的长期记忆。
+
 后续迁移点:
 
 - 用 AIRI `stage-ui-live2d` 替换当前 CSS/SVG 角色。
-- 用 AIRI `core-character` 管理角色人格和状态。
-- 用 AIRI `core-agent` 接 LLM 工具调用。
-- 用 AIRI memory 方案前，必须先实现用户可查看、可删除、可关闭的心理记忆层。
+- 参考 AIRI `core-character` 扩展角色配置和 Live2D 状态映射。
+- 参考 AIRI `core-agent` 增加受控工具调用与更多模型 Provider。
+- 在现有本地记忆控制之上增加摘要压缩和可关闭的记忆开关。
+- 为语音增加按住说话、可打断播放和 ASteam bridge/browser 双路径。

@@ -16,6 +16,7 @@ const runTool = document.querySelector("#runTool");
 const sampleConversation = document.querySelector("#sampleConversation");
 const floatingPet = document.querySelector("#floatingPet");
 const live2dStage = document.querySelector("#live2dStage");
+const dialoguePanel = document.querySelector(".dialogue");
 const gameStatus = document.querySelector("#gameStatus");
 const bubbleGame = document.querySelector("#bubbleGame");
 const breathGame = document.querySelector("#breathGame");
@@ -30,6 +31,7 @@ const checkinThread = document.querySelector("#checkinThread");
 const checkinForm = document.querySelector("#checkinForm");
 const checkinAnswer = document.querySelector("#checkinAnswer");
 const quietMode = document.querySelector("#quietMode");
+const logoutProfile = document.querySelector("#logoutProfile");
 const modalBackdrop = document.querySelector("#modalBackdrop");
 const memoryDialog = document.querySelector("#memoryDialog");
 const memoryForm = document.querySelector("#memoryForm");
@@ -41,6 +43,10 @@ const safetySaved = document.querySelector("#safetySaved");
 
 let activeProfile = null;
 let checkinStep = 0;
+let conversationHistory = [];
+let sessionId = createSessionId();
+let chatPending = false;
+let activeToolFlow = null;
 
 const checkinQuestions = [
   "是什么让你今天来到这里？",
@@ -63,7 +69,7 @@ let live2dBaseHeight = 1;
 const toolLabels = {
   hold: "先接住 · 情绪承接",
   untangle: "拆心结 · 认知梳理",
-  play: "变轻点 · 减压游戏",
+  play: "变轻点 · 压力拆解",
   breathe: "呼吸灯 · 身体安定",
   sleep: "睡前卸载 · 收工仪式",
   letter: "写给自己 · 自我同情",
@@ -103,10 +109,10 @@ const toolMocks = {
   },
   play: {
     title: "变轻点",
-    when: "适合压力很满，但暂时不想严肃分析的时候。",
-    input: "我烦得不行，什么都不想做",
-    output: "一个 20 秒减压动作 + 一个轻一点的说法",
-    result: "先把情绪强度降下来，再决定要不要继续聊。",
+    when: "适合压力很满，需要先把事情分出轻重的时候。",
+    input: "我有好多事压着，完全不知道先处理什么",
+    output: "必须做、可延后、可求助三栏 + 一个最小动作",
+    result: "先把压力从一团变成能处理的一格。",
     flow: [
       ["user", "我烦得不行，什么都不想做。"],
       ["bot", "先不解决人生。我们先把这团烦躁变小一点。"],
@@ -284,6 +290,36 @@ function addMessage(text, who = "bot") {
   node.textContent = text;
   messages.appendChild(node);
   messages.scrollTop = messages.scrollHeight;
+  return node;
+}
+
+function createSessionId() {
+  return globalThis.crypto?.randomUUID?.() || `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeStoredHistory(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && ["user", "assistant"].includes(item.role) && typeof item.content === "string")
+    .map((item) => ({ role: item.role, content: item.content.slice(0, 1600) }))
+    .slice(-40);
+}
+
+function saveConversationTurn(userText, assistantText) {
+  conversationHistory = [
+    ...conversationHistory,
+    { role: "user", content: userText },
+    { role: "assistant", content: assistantText }
+  ].slice(-40);
+  if (!activeProfile) return;
+  activeProfile.conversation = conversationHistory;
+  activeProfile.sessionId = sessionId;
+  saveProfile();
+}
+
+function renderConversationHistory() {
+  messages.innerHTML = "";
+  conversationHistory.forEach((item) => addMessage(item.content, item.role === "user" ? "user" : "bot"));
 }
 
 function speak(text) {
@@ -375,6 +411,430 @@ const focusFlows = {
   }
 };
 
+const guidedToolKeys = new Set(["untangle", "play", "support"]);
+
+const guidedToolDefinitions = {
+  untangle: {
+    title: "拆心结",
+    badge: "多轮整理",
+    intro: "我们只把一团心事拆开，不急着判断你对不对。",
+    totalSteps: 5,
+    placeholder: "先写：0-10 分 + 最卡住你的事",
+    firstPrompt: "先给这份难受打 0-10 分，再写一句最卡住你的事。比如：8 分，朋友那句话让我一直想是不是我太敏感。"
+  },
+  play: {
+    title: "压力拆解",
+    badge: "三栏分类",
+    intro: "把压力从一整团拆成：今天必须做、可以延后、可以找人帮忙。",
+    totalSteps: 4,
+    placeholder: "一行一个压力点，或者用逗号隔开",
+    firstPrompt: "把现在压着你的 1-5 件事写下来。一行一个，或者用逗号隔开。先不用排序。"
+  },
+  support: {
+    title: "求助计划",
+    badge: "真人支持",
+    intro: "不需要解释全部，我们先准备一条真的能发出去的消息。",
+    totalSteps: 3,
+    placeholder: "选一个求助对象，也可以直接输入",
+    firstPrompt: "先选一个比较可能回应你的人：朋友、家人、同事/老师，或专业人士。也可以直接写称呼。"
+  }
+};
+
+const feelingHints = [
+  ["委屈", /委屈|不公平|没人懂|误解|冤枉/],
+  ["不被尊重", /尊重|冒犯|边界|看不起|羞辱/],
+  ["焦虑", /焦虑|担心|害怕|慌|压力|紧张|睡不着/],
+  ["低落", /难过|崩溃|累|麻木|没意思|没力气|抑郁/],
+  ["愤怒", /生气|愤怒|烦|火大|讨厌|受不了/],
+  ["孤独", /孤独|一个人|没人陪|没人理|空/]
+];
+
+const pressureLabels = {
+  must: "今天必须处理",
+  later: "可以延后",
+  ask: "可以求助"
+};
+
+const supportToneLabels = {
+  soft: "轻一点",
+  direct: "直接一点",
+  familiar: "熟人语气"
+};
+
+function normalizeShortText(text, fallback = "这件事") {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return fallback;
+  return clean.length > 52 ? `${clean.slice(0, 52)}...` : clean;
+}
+
+function extractScore(text) {
+  const match = String(text || "").match(/(?:^|[^\d])([0-9]|10)(?:\s*分)?(?:$|[^\d])/);
+  return match ? Number(match[1]) : null;
+}
+
+function inferFeeling(text, fallback = "难受") {
+  const hit = feelingHints.find(([, pattern]) => pattern.test(text));
+  return hit ? hit[0] : fallback;
+}
+
+function splitPressureItems(text) {
+  return String(text || "")
+    .split(/[\n,，、；;]+/)
+    .map((item) => normalizeShortText(item, ""))
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function classifyPressureItem(item, index) {
+  if (/求|帮|问|联系|沟通|老师|同事|家人|朋友|医生|咨询/.test(item)) return "ask";
+  if (/以后|改天|下周|以后再|不急|可以晚|复盘|整理/.test(item)) return "later";
+  if (index === 0 || /今天|明天|马上|截止|必须|考试|汇报|上交|面试/.test(item)) return "must";
+  return index >= 3 ? "later" : "must";
+}
+
+function getGroupedPressure(flow) {
+  const items = flow.data.items || [];
+  const categories = flow.data.categories || {};
+  return Object.keys(pressureLabels).reduce((groups, key) => {
+    groups[key] = items.filter((_, index) => categories[index] === key);
+    return groups;
+  }, {});
+}
+
+function createToolFlow(tool) {
+  const definition = guidedToolDefinitions[tool];
+  return {
+    tool,
+    step: 0,
+    completed: false,
+    answers: [],
+    data: {},
+    memoryCandidate: "",
+    prompt: definition.firstPrompt,
+    createdAt: Date.now()
+  };
+}
+
+function setToolComposer(active) {
+  const submitButton = composer.querySelector("button[type='submit']");
+  if (!activeToolFlow || !active) {
+    input.placeholder = "说一句最卡住你的话，我会陪你慢慢整理...";
+    runTool.textContent = "开始";
+    if (submitButton) submitButton.textContent = "发送";
+    return;
+  }
+  const definition = guidedToolDefinitions[activeToolFlow.tool];
+  input.placeholder = activeToolFlow.completed ? "可以继续和心蕊正常聊天..." : definition.placeholder;
+  runTool.textContent = activeToolFlow.completed ? "再做一次" : "重开";
+  if (submitButton) submitButton.textContent = activeToolFlow.completed ? "发送" : "继续";
+}
+
+function renderToolProgress(flow, definition) {
+  const current = flow.completed ? definition.totalSteps : Math.min(flow.step + 1, definition.totalSteps);
+  const percent = flow.completed ? 100 : Math.round((flow.step / definition.totalSteps) * 100);
+  return `
+    <div class="tool-flow-progress" aria-label="当前进度">
+      <span style="width:${percent}%"></span>
+    </div>
+    <div class="tool-flow-meta"><span>${current} / ${definition.totalSteps}</span><span>${escapeHtml(definition.badge)}</span></div>
+  `;
+}
+
+function renderPressureClassifier(flow) {
+  const items = flow.data.items || [];
+  const categories = flow.data.categories || {};
+  if (!items.length || flow.step !== 1 || flow.completed) return "";
+  return `
+    <div class="pressure-classifier">
+      ${items.map((item, index) => `
+        <div class="pressure-item">
+          <strong>${escapeHtml(item)}</strong>
+          <div>
+            ${Object.entries(pressureLabels).map(([key, label]) => `
+              <button type="button" data-tool-action="pressure-class" data-item-index="${index}" data-pressure-class="${key}" class="${categories[index] === key ? "active" : ""}">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderPressureColumns(flow) {
+  if (flow.tool !== "play" || !(flow.data.items || []).length) return "";
+  const grouped = getGroupedPressure(flow);
+  return `
+    <div class="pressure-columns">
+      ${Object.entries(pressureLabels).map(([key, label]) => `
+        <section>
+          <h4>${label}</h4>
+          ${grouped[key].length ? grouped[key].map((item) => `<p>${escapeHtml(item)}</p>`).join("") : "<p>暂时没有</p>"}
+        </section>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderSupportChoices(flow) {
+  if (flow.tool !== "support" || flow.completed) return "";
+  if (flow.step === 0) {
+    return `
+      <div class="choice-row">
+        ${["朋友", "家人", "同事/老师", "专业人士"].map((item) => `<button type="button" data-tool-action="support-contact" data-value="${item}">${item}</button>`).join("")}
+      </div>
+    `;
+  }
+  if (flow.step === 1) {
+    return `
+      <div class="choice-row">
+        <button type="button" data-tool-action="support-need" data-value="只是想有人陪我说说话">陪我说说话</button>
+        <button type="button" data-tool-action="support-need" data-value="想请你帮我一起想办法">一起想办法</button>
+        <button type="button" data-tool-action="support-need" data-value="我现在状态比较危险，需要你尽快联系我">尽快联系我</button>
+      </div>
+    `;
+  }
+  return "";
+}
+
+function renderSupportDraft(flow) {
+  if (flow.tool !== "support" || !flow.data.draft) return "";
+  return `
+    <div class="support-draft">
+      <p>${escapeHtml(flow.data.draft)}</p>
+      <div class="choice-row">
+        <button type="button" data-tool-action="copy-support">复制消息</button>
+        ${Object.entries(supportToneLabels).map(([tone, label]) => `<button type="button" data-tool-action="support-tone" data-tone="${tone}">${label}</button>`).join("")}
+        <button type="button" data-tool-action="open-safety">安全计划</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderToolWorkbench() {
+  if (!activeToolFlow) {
+    sampleConversation.classList.remove("tool-workbench");
+    sampleConversation.hidden = true;
+    setToolComposer(false);
+    return;
+  }
+  const flow = activeToolFlow;
+  const definition = guidedToolDefinitions[flow.tool];
+  const statusText = flow.completed ? "已完成" : flow.prompt;
+  sampleConversation.classList.add("tool-workbench");
+  sampleConversation.hidden = false;
+  sampleConversation.innerHTML = `
+    <div class="tool-flow-head">
+      <div>
+        <span>${escapeHtml(definition.badge)}</span>
+        <strong>${escapeHtml(definition.title)}</strong>
+      </div>
+      <button type="button" data-tool-action="exit">回到聊天</button>
+    </div>
+    <p class="tool-flow-intro">${escapeHtml(definition.intro)}</p>
+    ${renderToolProgress(flow, definition)}
+    <article class="message bot sample">${escapeHtml(statusText)}</article>
+    ${renderPressureClassifier(flow)}
+    ${renderPressureColumns(flow)}
+    ${renderSupportChoices(flow)}
+    ${renderSupportDraft(flow)}
+    <div class="tool-flow-actions">
+      ${flow.step === 1 && flow.tool === "play" && !flow.completed ? '<button type="button" data-tool-action="pressure-done">完成分类</button>' : ""}
+      ${flow.completed && flow.memoryCandidate ? '<button type="button" data-tool-action="save-memory">保存到记忆</button>' : ""}
+      ${flow.completed ? '<button type="button" data-tool-action="restart">再做一次</button>' : ""}
+    </div>
+  `;
+  setToolComposer(true);
+}
+
+function finishGuidedTool(flow, message, memoryCandidate = "") {
+  flow.completed = true;
+  flow.prompt = "这个工具已经做完。你可以保存有效方法，也可以直接回到普通聊天。";
+  flow.memoryCandidate = memoryCandidate;
+  addMessage(message, "bot");
+  renderToolWorkbench();
+}
+
+function completeUntangle(flow) {
+  const issue = normalizeShortText(flow.data.issue);
+  const fact = normalizeShortText(flow.data.fact || issue);
+  const feeling = flow.data.feeling || inferFeeling(`${issue} ${flow.data.sting || ""}`);
+  const thought = normalizeShortText(flow.data.thought, "我脑子里那句很重的话");
+  const need = /尊重|忽略|否定|抛下|边界/.test(flow.data.sting || "") ? "被认真对待" : "被理解，也被允许慢一点";
+  const action = /关系|朋友|家人|同事|老师/.test(issue)
+    ? "先写一版不发送的表达草稿"
+    : "只处理今天能控制的 10%";
+  const scoreLine = flow.data.scoreBefore !== null || flow.data.scoreAfter !== null
+    ? `\n强度：${flow.data.scoreBefore ?? "未记录"} -> ${flow.data.scoreAfter ?? "未记录"} 分`
+    : "";
+
+  renderCube([
+    `事实：${fact}`,
+    `感受：${feeling}`,
+    `需要：${need}`,
+    `想法：${thought}`,
+    `刺痛：${normalizeShortText(flow.data.sting, "还在确认")}`,
+    `可控：${action}`,
+    "支持：需要时找真人",
+    "身体：呼气六秒",
+    "收束：先到这里"
+  ]);
+  finishGuidedTool(
+    flow,
+    `我帮你拆好了：\n事实：${fact}\n感受：${feeling}\n想法：${thought}\n需要：${need}\n小动作：${action}${scoreLine}\n\n所以这不是“你太敏感”这么简单，而是这件事碰到了你很在意的需要。`,
+    `拆心结对我有用：先分事实、感受、想法，再只做一个可控小动作。`
+  );
+  spirit.dataset.state = "relieved";
+}
+
+function completePressure(flow) {
+  const grouped = getGroupedPressure(flow);
+  const firstMust = grouped.must[0] || flow.data.items[0] || "眼前这件事";
+  const action = normalizeShortText(flow.data.action, `只打开和“${firstMust}”有关的第一样东西`);
+  const scoreLine = flow.data.scoreAfter !== null ? `\n现在压力分数：${flow.data.scoreAfter} / 10` : "";
+  finishGuidedTool(
+    flow,
+    `压力已经分成三栏：\n今天必须处理：${grouped.must.join("、") || "暂时没有"}\n可以延后：${grouped.later.join("、") || "暂时没有"}\n可以求助：${grouped.ask.join("、") || "暂时没有"}\n\n现在只做一个小动作：${action}。完成不了也没关系，可以继续缩小到 30 秒。${scoreLine}`,
+    `压力大时对我有用：先分成必须做、可延后、可求助，再只选一个小动作。`
+  );
+  spirit.dataset.state = "relieved";
+}
+
+function buildSupportDraft(flow, tone = flow.data.tone || "soft") {
+  const contact = flow.data.contact || "你";
+  const need = flow.data.need || "只是想有人陪我说说话";
+  if (tone === "direct") {
+    return `${contact}，我现在状态不太好，${need}。你现在方便联系我一下吗？`;
+  }
+  if (tone === "familiar") {
+    return `${contact}，我这会儿有点撑不住，想找你待一会儿。不用帮我解决全部，能不能回我一下？`;
+  }
+  return `${contact}，我现在状态不太好，不需要你马上解决问题，${need}。你方便陪我十分钟吗？`;
+}
+
+function completeSupport(flow) {
+  flow.data.tone = flow.data.tone || "soft";
+  flow.data.draft = buildSupportDraft(flow);
+  const urgent = /危险|尽快|不安全|马上/.test(flow.data.need || "");
+  finishGuidedTool(
+    flow,
+    `我先写了一条可以发出去的求助消息。发出后，尽量去明亮、有人经过的地方等回应。${urgent ? "如果你现在有立即危险，请直接联系 120、110 或附近医院急诊。" : ""}`,
+    `我可以求助时使用这句开口：${flow.data.draft}`
+  );
+  if (urgent) openDialog(safetyDialog);
+  spirit.dataset.state = urgent ? "guard" : "soft";
+}
+
+async function checkToolSafety(text) {
+  try {
+    return await fetch("/api/safety/check", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text })
+    }).then((response) => response.json());
+  } catch {
+    return null;
+  }
+}
+
+async function processGuidedToolAnswer(text) {
+  if (!activeToolFlow || activeToolFlow.completed) return false;
+  const flow = activeToolFlow;
+  const safety = await checkToolSafety(text);
+  if (safety?.crisis) {
+    addMessage(safety.message, "guard");
+    openDialog(safetyDialog);
+    flow.tool = "support";
+    flow.step = 1;
+    flow.data.need = "我现在状态比较危险，需要你尽快联系我";
+    flow.prompt = "先选一个可以马上联系的人。也可以直接输入称呼。";
+    spirit.dataset.state = "guard";
+    renderToolWorkbench();
+    return true;
+  }
+  if (safety?.needsHumanSupport && flow.tool !== "support") {
+    addMessage(safety.message, "bot");
+  }
+
+  flow.answers.push({ step: flow.step, text, createdAt: Date.now() });
+  if (flow.tool === "untangle") {
+    if (flow.step === 0) {
+      flow.data.scoreBefore = extractScore(text);
+      flow.data.issue = text.replace(/(?:^|[^\d])(?:[0-9]|10)\s*分?/, "").trim() || text;
+      flow.data.feeling = inferFeeling(text);
+      flow.step = 1;
+      flow.prompt = "这件事最刺痛你的地方更像哪一个：被否定、被忽略、被抛下、不被尊重，还是别的？";
+      addMessage(`我先听见了“${flow.data.feeling}”。我们不急着下结论，先找那一下最刺痛的位置。`, "bot");
+    } else if (flow.step === 1) {
+      flow.data.sting = text;
+      flow.step = 2;
+      flow.prompt = "如果只写摄像头能拍到的部分，事实会是哪一句？";
+      addMessage("好，先把刺痛放在这一格。下一格我们只写事实，不写评价。", "bot");
+    } else if (flow.step === 2) {
+      flow.data.fact = text;
+      flow.step = 3;
+      flow.prompt = "脑子里最重、最反复的那句话是什么？可以照原样写出来。";
+      addMessage("事实已经清楚一点了。现在把脑内那句最重的话单独拿出来看。", "bot");
+    } else if (flow.step === 3) {
+      flow.data.thought = text;
+      flow.step = 4;
+      flow.prompt = "现在再给这份难受打 0-10 分。如果不想打分，也可以写“跳过”。";
+      addMessage("这句话很重，但它是一种想法，不等于完整的你。我们最后看一下强度有没有松一点。", "bot");
+    } else {
+      flow.data.scoreAfter = extractScore(text);
+      completeUntangle(flow);
+    }
+  } else if (flow.tool === "play") {
+    if (flow.step === 0) {
+      const items = splitPressureItems(text);
+      flow.data.items = items.length ? items : [normalizeShortText(text)];
+      flow.data.categories = Object.fromEntries(flow.data.items.map((item, index) => [index, classifyPressureItem(item, index)]));
+      flow.step = 1;
+      flow.prompt = "我先放进三栏了。你可以点按钮调整分类，调好后点“完成分类”。";
+      addMessage("我先把它们从一团压力拆成三栏。这里不是最终判断，你可以马上调整。", "bot");
+    } else if (flow.step === 1) {
+      flow.prompt = "这一格需要点一下分类按钮。调好后点“完成分类”，我再陪你选最小动作。";
+      addMessage("我收到你的补充了。为了让压力真的变清楚，这一步请先在上方面板里点分类。", "bot");
+    } else if (flow.step === 2) {
+      flow.data.action = text;
+      flow.step = 3;
+      flow.prompt = "现在给压力重新打 0-10 分。完成不了也可以说“没完成”。";
+      addMessage("这个动作已经够小了。我们只看它能不能帮你启动，不要求一次解决全部。", "bot");
+    } else if (flow.step === 3) {
+      flow.data.scoreAfter = extractScore(text);
+      completePressure(flow);
+    }
+  } else if (flow.tool === "support") {
+    if (flow.step === 0) {
+      flow.data.contact = normalizeShortText(text, "你");
+      flow.step = 1;
+      flow.prompt = "你希望对方怎么帮你？选一个：陪我说说话、一起想办法、尽快联系我。";
+      addMessage(`好，先把“${flow.data.contact}”放进求助计划。下一步只说你希望对方怎么陪。`, "bot");
+    } else if (flow.step === 1) {
+      flow.data.need = normalizeShortText(text, "只是想有人陪我说说话");
+      completeSupport(flow);
+    }
+  }
+  renderToolWorkbench();
+  return true;
+}
+
+function startGuidedTool(tool = mode) {
+  if (!guidedToolKeys.has(tool)) {
+    activeToolFlow = null;
+    renderToolWorkbench();
+    runSelectedTool();
+    return;
+  }
+  activeToolFlow = createToolFlow(tool);
+  const definition = guidedToolDefinitions[tool];
+  sampleConversation.hidden = false;
+  addMessage(`我们用「${definition.title}」来做，不用一次说完整。`, "bot");
+  addMessage(definition.firstPrompt, "bot");
+  spirit.dataset.state = tool === "support" ? "soft" : "thinking";
+  renderToolWorkbench();
+  input.focus();
+}
+
 function profileKey(name) {
   return `heartAiriProfile:${encodeURIComponent(name.trim().toLowerCase())}`;
 }
@@ -394,8 +854,12 @@ function saveProfile() {
 
 function showProfile(profile) {
   activeProfile = profile;
+  conversationHistory = normalizeStoredHistory(profile.conversation);
+  sessionId = typeof profile.sessionId === "string" && profile.sessionId ? profile.sessionId : createSessionId();
   profileName.value = profile.name;
   welcomeGate.hidden = true;
+  if ((profile.checkin || []).length >= checkinQuestions.length) sampleConversation.hidden = true;
+  renderConversationHistory();
   renderMemoryList();
   if (profile.safetyPlan) {
     safetyContact.value = profile.safetyPlan.contact || "";
@@ -438,6 +902,8 @@ function finishCheckin() {
 function renderMemoryList() {
   if (!activeProfile) return;
   const memories = activeProfile.memories || [];
+  const turns = Math.floor(conversationHistory.length / 2);
+  document.querySelector("#conversationSummary").textContent = turns ? `已在这台设备保存最近 ${turns} 轮对话` : "这台设备还没有保存最近对话";
   memoryList.innerHTML = memories.length
     ? memories.map((memory, index) => `<div class="memory-item"><span>${escapeHtml(memory.text)}</span><button type="button" data-memory-index="${index}">删除</button></div>`).join("")
     : `<p class="dialog-copy">还没有保存的内容。只有你主动点击“记住这件事”，心蕊才会把它放进这里。</p>`;
@@ -452,6 +918,24 @@ function closeDialogs() {
   modalBackdrop.hidden = true;
   memoryDialog.hidden = true;
   safetyDialog.hidden = true;
+}
+
+function returnToProfileGate() {
+  if (activeProfile) saveProfile();
+  localStorage.removeItem("heartAiriLastProfile");
+  activeProfile = null;
+  conversationHistory = [];
+  sessionId = createSessionId();
+  messages.innerHTML = "";
+  input.value = "";
+  checkinAnswer.value = "";
+  checkinThread.innerHTML = "";
+  checkinPanel.hidden = true;
+  closeDialogs();
+  setQuietMode(false);
+  welcomeGate.hidden = false;
+  profileName.value = "";
+  profileName.focus();
 }
 
 async function copyText(text) {
@@ -492,7 +976,7 @@ function initProfileAndMvp() {
     localStorage.setItem("heartAiriLastProfile", name);
     saveProfile();
     showProfile(activeProfile);
-    startCheckin();
+    if (!(activeProfile.checkin || []).length) startCheckin();
   });
 
   checkinForm.addEventListener("submit", (event) => {
@@ -517,9 +1001,10 @@ function initProfileAndMvp() {
   });
 
   quietMode.addEventListener("click", () => {
-    document.body.classList.toggle("quiet-mode");
-    quietMode.textContent = document.body.classList.contains("quiet-mode") ? "恢复完整模式" : "安静模式";
+    setQuietMode(!document.body.classList.contains("quiet-mode"));
   });
+
+  logoutProfile.addEventListener("click", returnToProfileGate);
 
   document.querySelector("#openMemory").addEventListener("click", () => {
     renderMemoryList();
@@ -556,6 +1041,21 @@ function initProfileAndMvp() {
     closeDialogs();
     welcomeGate.hidden = false;
     profileName.value = "";
+    conversationHistory = [];
+    sessionId = createSessionId();
+    messages.innerHTML = "";
+  });
+
+  document.querySelector("#clearConversation").addEventListener("click", () => {
+    if (!activeProfile || !window.confirm("确定清空最近对话吗？主动保存的长期记忆会保留。")) return;
+    conversationHistory = [];
+    sessionId = createSessionId();
+    activeProfile.conversation = [];
+    activeProfile.sessionId = sessionId;
+    saveProfile();
+    renderConversationHistory();
+    renderMemoryList();
+    addMessage(`我是心蕊。${activeProfile.name}，我们可以从现在重新开始。`, "bot");
   });
 
   document.querySelector("#copyHelpMessage").addEventListener("click", async (event) => {
@@ -576,15 +1076,80 @@ function initProfileAndMvp() {
   });
 }
 
-async function extractKnot(text) {
+function parseSseEvent(rawEvent) {
+  let event = "message";
+  const data = [];
+  for (const line of rawEvent.split(/\r?\n/)) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    if (line.startsWith("data:")) data.push(line.slice(5).trim());
+  }
+  if (!data.length) return null;
+  return { event, data: JSON.parse(data.join("\n")) };
+}
+
+async function chatWithHeart(text) {
   spirit.dataset.state = "thinking";
-  const response = await fetch("/api/knot/extract", {
+  const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, mood, mode })
+    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    body: JSON.stringify({
+      text,
+      mood,
+      mode,
+      stream: true,
+      sessionId,
+      nickname: activeProfile?.name || "",
+      history: conversationHistory.slice(-24),
+      memories: (activeProfile?.memories || []).map((memory) => memory.text)
+    })
   });
   if (!response.ok) throw new Error(`request failed: ${response.status}`);
-  return response.json();
+  if (!response.body) throw new Error("stream is unavailable");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let reply = "";
+  let botMessage = null;
+  let result = null;
+  let streamContext = null;
+
+  function handle(rawEvent) {
+    const message = parseSseEvent(rawEvent);
+    if (!message) return;
+    if (message.event === "context") {
+      streamContext = message.data;
+      sessionId = message.data.sessionId || sessionId;
+      applyKnot(message.data, { showReply: false });
+    } else if (message.event === "delta") {
+      reply += message.data.delta || "";
+      botMessage ||= addMessage("", streamContext?.safety?.crisis ? "guard" : "bot");
+      botMessage.textContent = reply;
+      messages.scrollTop = messages.scrollHeight;
+    } else if (message.event === "replace") {
+      reply = message.data.reply || "";
+      botMessage ||= addMessage("", "bot");
+      botMessage.textContent = reply;
+    } else if (message.event === "result") {
+      result = message.data;
+      reply = result.reply || reply;
+      botMessage ||= addMessage(reply, result.safety?.crisis ? "guard" : "bot");
+      botMessage.textContent = reply;
+      if (result.fallback) runtimeStatus.textContent = "轻量陪伴中";
+    } else if (message.event === "error") {
+      throw new Error(message.data.message || "reply stream failed");
+    }
+  }
+
+  for await (const chunk of response.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || "";
+    events.forEach(handle);
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) handle(buffer);
+  if (!result || !reply) throw new Error("reply stream ended early");
+  return { ...result, reply };
 }
 
 async function loadRuntime() {
@@ -621,6 +1186,32 @@ function restorePetPosition() {
     const rect = floatingPet.getBoundingClientRect();
     placePet(22, window.innerHeight - rect.height - 22);
   });
+}
+
+function dockPetForQuietMode() {
+  window.requestAnimationFrame(() => {
+    const petRect = floatingPet.getBoundingClientRect();
+    const dialogueRect = dialoguePanel?.getBoundingClientRect();
+    const composerRect = composer?.getBoundingClientRect();
+    const left = (dialogueRect?.left || 0) + (window.innerWidth <= 760 ? 14 : 26);
+    const lowerEdge = composerRect?.top || dialogueRect?.bottom || window.innerHeight;
+    const minTop = (dialogueRect?.top || 0) + 80;
+    const top = Math.max(minTop, lowerEdge - petRect.height - (window.innerWidth <= 760 ? 14 : 22));
+    placePet(left, top);
+    syncPetLayout();
+  });
+}
+
+function setQuietMode(enabled) {
+  document.body.classList.toggle("quiet-mode", enabled);
+  quietMode.textContent = enabled ? "恢复完整模式" : "安静模式";
+  spirit.dataset.state = enabled ? "soft" : "idle";
+  if (enabled) {
+    dockPetForQuietMode();
+  } else {
+    restorePetPosition();
+    window.requestAnimationFrame(syncPetLayout);
+  }
 }
 
 function fitLive2DModel() {
@@ -763,6 +1354,10 @@ function enablePetDrag() {
   });
 
   window.addEventListener("resize", () => {
+    if (document.body.classList.contains("quiet-mode")) {
+      dockPetForQuietMode();
+      return;
+    }
     const rect = floatingPet.getBoundingClientRect();
     placePet(rect.left, rect.top);
   });
@@ -803,7 +1398,7 @@ function enableMiniGames() {
   });
 }
 
-function applyKnot({ safety, knot }) {
+function applyKnot({ safety, knot, reply }, { showReply = true } = {}) {
   const needsHumanSupport = safety?.needsHumanSupport;
   spirit.dataset.state = safety?.crisis ? "guard" : needsHumanSupport ? "thinking" : "soft";
   safetyStatus.textContent = safety?.crisis ? "危机守护" : needsHumanSupport ? "建议找真人" : "陪伴梳理";
@@ -813,8 +1408,8 @@ function applyKnot({ safety, knot }) {
   need.textContent = knot.need || "被理解";
   tinyStep.textContent = knot.tinyStep || knot.controllable || "慢一点";
   renderCube(knot.tiles || ["事实", "感受", "需要", "猜测", "可控", "支持", "小步", "呼吸", "放下"]);
-  if (needsHumanSupport) addMessage(safety.message, safety.crisis ? "guard" : "bot");
-  addMessage(knot.reply || "我在这里，我们一格一格来。", safety?.crisis ? "guard" : "bot");
+  if (needsHumanSupport && !safety?.crisis) addMessage(safety.message, "bot");
+  if (showReply) addMessage(reply || knot.reply || "我在这里，我们一格一格来。", safety?.crisis ? "guard" : "bot");
   if (needsHumanSupport) renderFocusFlow("support");
 }
 
@@ -862,6 +1457,95 @@ async function runSelectedTool() {
   spirit.dataset.state = mode === "breathe" ? "relieved" : mode === "play" ? "play" : data.safety?.crisis ? "guard" : "soft";
 }
 
+async function handleToolWorkbenchAction(event) {
+  const button = event.target.closest("[data-tool-action]");
+  if (!button || !activeToolFlow) return;
+  const action = button.dataset.toolAction;
+  const flow = activeToolFlow;
+
+  if (action === "exit") {
+    activeToolFlow = null;
+    renderToolWorkbench();
+    addMessage("好，我们回到普通聊天。你可以照原来的节奏说。", "bot");
+    input.focus();
+    return;
+  }
+
+  if (action === "restart") {
+    startGuidedTool(flow.tool);
+    return;
+  }
+
+  if (action === "save-memory") {
+    if (!activeProfile || !flow.memoryCandidate) return;
+    const exists = (activeProfile.memories || []).some((memory) => memory.text === flow.memoryCandidate);
+    if (!exists) {
+      activeProfile.memories = [...(activeProfile.memories || []), { text: flow.memoryCandidate, createdAt: Date.now() }].slice(-30);
+      saveProfile();
+      renderMemoryList();
+    }
+    button.textContent = "已保存";
+    button.disabled = true;
+    addMessage("我记下这个有效方法了。之后你也可以在“我的记忆”里删掉它。", "bot");
+    return;
+  }
+
+  if (action === "pressure-class") {
+    const index = Number(button.dataset.itemIndex);
+    if (!Number.isNaN(index)) {
+      flow.data.categories ||= {};
+      flow.data.categories[index] = button.dataset.pressureClass;
+      renderToolWorkbench();
+    }
+    return;
+  }
+
+  if (action === "pressure-done") {
+    flow.step = 2;
+    const grouped = getGroupedPressure(flow);
+    const first = grouped.must[0] || flow.data.items[0] || "眼前这件事";
+    flow.prompt = `现在只选一个最小动作。针对“${first}”，30 秒内能做的版本是什么？`;
+    addMessage("分类完成。现在不要同时处理三栏，只从必须做里拿出一个小到能开始的动作。", "bot");
+    renderToolWorkbench();
+    input.focus();
+    return;
+  }
+
+  if (action === "support-contact") {
+    flow.data.contact = button.dataset.value;
+    flow.step = 1;
+    flow.prompt = "你希望对方怎么帮你？选一个：陪我说说话、一起想办法、尽快联系我。";
+    addMessage(`好，先找“${flow.data.contact}”。我们把请求说具体一点。`, "bot");
+    renderToolWorkbench();
+    return;
+  }
+
+  if (action === "support-need") {
+    flow.data.need = button.dataset.value;
+    completeSupport(flow);
+    renderToolWorkbench();
+    return;
+  }
+
+  if (action === "support-tone") {
+    flow.data.tone = button.dataset.tone;
+    flow.data.draft = buildSupportDraft(flow, flow.data.tone);
+    flow.memoryCandidate = `我可以求助时使用这句开口：${flow.data.draft}`;
+    renderToolWorkbench();
+    return;
+  }
+
+  if (action === "copy-support") {
+    const copied = await copyText(flow.data.draft || "");
+    button.textContent = copied ? "已复制" : "复制失败";
+    return;
+  }
+
+  if (action === "open-safety") {
+    openDialog(safetyDialog);
+  }
+}
+
 toolGrid.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -870,11 +1554,13 @@ toolGrid.addEventListener("click", (event) => {
     toolButton.classList.toggle("active", toolButton === button);
   });
   selectedTool.textContent = toolLabels[mode];
-  renderToolMock(mode);
+  if (!activeToolFlow) renderToolMock(mode);
   spirit.dataset.state = mode === "play" ? "play" : mode === "breathe" ? "relieved" : "idle";
 });
 
-runTool.addEventListener("click", runSelectedTool);
+runTool.textContent = "开始";
+runTool.addEventListener("click", () => startGuidedTool(mode));
+sampleConversation.addEventListener("click", handleToolWorkbenchAction);
 
 document.querySelector("#moods").addEventListener("click", (event) => {
   const button = event.target.closest("button");
@@ -887,15 +1573,29 @@ document.querySelector("#moods").addEventListener("click", (event) => {
 composer.addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = input.value.trim();
-  if (!text) return;
+  if (!text || chatPending) return;
+  chatPending = true;
+  const submitButton = composer.querySelector("button[type='submit']");
+  submitButton.disabled = true;
+  submitButton.textContent = "回应中";
   addMessage(text, "user");
   input.value = "";
   try {
-    applyKnot(await extractKnot(text));
+    if (activeToolFlow && !activeToolFlow.completed) {
+      await processGuidedToolAnswer(text);
+    } else {
+      const result = await chatWithHeart(text);
+      saveConversationTurn(text, result.reply);
+    }
   } catch (error) {
     spirit.dataset.state = "guard";
     addMessage("我刚刚没接稳这句话。先别急，我们可以重新说短一点。", "bot");
     console.error(error);
+  } finally {
+    chatPending = false;
+    submitButton.disabled = false;
+    submitButton.textContent = activeToolFlow && !activeToolFlow.completed ? "继续" : "发送";
+    input.focus();
   }
 });
 
@@ -908,5 +1608,5 @@ enableMiniGames();
 initProfileAndMvp();
 loadRuntime();
 if (activeProfile) {
-  addMessage(`我是心蕊。${activeProfile.name}，今天不用急着解决全部事情，我们先照顾一个小地方。`, "bot");
+  if (!conversationHistory.length) addMessage(`我是心蕊。${activeProfile.name}，今天不用急着解决全部事情，我们先照顾一个小地方。`, "bot");
 }
